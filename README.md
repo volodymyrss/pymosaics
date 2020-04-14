@@ -26,6 +26,6 @@ $ mosaic tests/data/isgri_sky_ima_{1,2}.fits.gz out.fits --pixels healpix # heal
 ```
 
 ```python
-import mosaic$                                                               
+import mosaic                                                            
 mosaic.mosaic_fn_list(["tests/data/isgri_sky_ima_1.fits.gz", "tests/data/isgri_sky_ima_2.fits.gz"], "out.fits")
 ```
