@@ -32,7 +32,7 @@ class Mosaic:
         pass
 
     @staticmethod
-    def m(a, _s_a, b, _s_b):
+    def m_s(a, _s_a, b, _s_b):
         c=dict()
 
         _m = ~np.isnan(_s_b(a['flux']))
@@ -54,13 +54,24 @@ class Mosaic:
         return c
 
     @staticmethod
-    def m_wm(a, s_a, b, s_b):
+    def m(a, _s_a, b, _s_b):
+        _m = ~np.isnan(_s_b(b['flux']))
+
+        s_a = lambda x:_s_a(x)[_m]
+        s_b = lambda x:_s_b(x)[_m]
+
         c=dict()
-        c['flux'] = s_a(a['flux']) / s_a(a['var']) + s_b(b['flux']) / s_b(b['var'])
-        c['var'] = ( 1 / s_a(a['var']) + 1 / s_b(b['var']) ) ** -1
-        c['flux'] = c['flux'] / c['var']
-        c['ex'] = s_a(a['ex']) + s_b(b['ex'])
-        c['n'] = s_a(a['n']) + s_b(b['n'])
+        c['flux'] = a['flux']
+        c['var'] = a['var']
+        c['ex'] = a['ex']
+        c['n'] = a['n']
+
+        c['flux'][_m] = s_a(a['flux']) / s_a(a['var']) + s_b(b['flux']) / s_b(b['var'])
+        c['var'][_m] = ( 1 / s_a(a['var']) + 1 / s_b(b['var']) ) ** -1
+        c['flux'][_m] = c['flux'][_m] * c['var'][_m]
+        c['ex'][_m] = s_a(a['ex']) + s_b(b['ex'])
+        c['n'][_m] = s_a(a['n']) + s_b(b['n'])
+
         return c
 
 class HealpixMosaic(Mosaic):
@@ -76,6 +87,31 @@ class HealpixMosaic(Mosaic):
     def writeto(self, fn: str):
         healpy.write_map(fn, self.mosaic)
 
+
+def img_parser_osa(f):  #eminmax
+    def imatype_selector(_f, n):
+        for e in _f:
+            if e.header.get('IMATYPE', None) == n:
+                return e
+
+
+    img = dict(
+        wcs = pywcs.WCS(imatype_selector(f, 'INTENSITY').header),
+        flux = imatype_selector(f, 'INTENSITY').data,
+        var = imatype_selector(f, 'VARIANCE').data,
+        ex = imatype_selector(f, 'EXPOSURE').data,
+    )
+    img['n'] = np.ones_like(img['ex'])
+
+    img['flux'][img['var']<=0] = float('NaN')
+
+    return img
+
+img_parsers = {
+        'osa': img_parser_osa,
+}
+
+
 class FITsMosaic(Mosaic):
     def __init__(self, mock=False):
         self.mosaic = None
@@ -86,36 +122,34 @@ class FITsMosaic(Mosaic):
 
         f = fits.open(fn)
 
-        def imatype_selector(_f, n):
-            for e in _f:
-                if e.header.get('IMATYPE', None) == n:
-                    return e
-
-
-        img = dict(
-            wcs = pywcs.WCS(imatype_selector(f, 'INTENSITY').header),
-            flux = imatype_selector(f, 'INTENSITY').data,
-            var = imatype_selector(f, 'VARIANCE').data,
-            ex = imatype_selector(f, 'EXPOSURE').data,
-        )
-        img['n'] = np.ones_like(img['ex'])
+        for n, img_parser in img_parsers.items():
+            try:
+                img = img_parser(f)
+                print("img parser succeeded", n)
+                break
+            except Exception as e:
+                print("img parser failed", n, e)
 
         if self.mock:
             img['var'] = 10*np.ones_like(img['var'])
             img['flux'] = -10*np.ones_like(img['var'])
-            sj, si = map(int, img['wcs'].wcs_world2pix(83, 22, 0))
-            sjd, sid = map(int, img['wcs'].wcs_world2pix(83, 24, 0))
 
-            print("mock crab at", si, sj, "and", sid, sjd)
+            try:
+                sj, si = map(int, img['wcs'].wcs_world2pix(83, 22, 0))
+                sjd, sid = map(int, img['wcs'].wcs_world2pix(83, 24, 0))
 
-            img['flux'][
-                    si-4:si+4,
-                    sj-4:sj+4,
-                    ] = 40
-            img['flux'][
-                    sid-4:sid+4,
-                    sjd-4:sjd+4,
-                    ] = 60
+                print("mock crab at", si, sj, "and", sid, sjd)
+
+                img['flux'][
+                        si-4:si+4,
+                        sj-4:sj+4,
+                        ] = 40
+                img['flux'][
+                        sid-4:sid+4,
+                        sjd-4:sjd+4,
+                        ] = 60
+            except Exception as e:
+                print("unable to add mock crab", e)
 
 
             img['flux'][
@@ -138,20 +172,6 @@ class FITsMosaic(Mosaic):
                     np.arange(self.mosaic['flux'].shape[1]),
                     np.arange(self.mosaic['flux'].shape[0]),
                 )
-            #m_i=m_i[::-1,::-1]
-            #m_j=m_j[::-1,::-1]
-
-            tm = m_i 
-            fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("mi.fits", overwrite=True)
-            
-            tm = m_j 
-            fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("mj.fits", overwrite=True)
-
-            tm = self.mosaic['flux']
-            fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("tmf.fits", overwrite=True)
-            
-            tm = self.mosaic['flux'][m_i, m_j]
-            fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("tmr.fits", overwrite=True)
 
             m_ra, m_dec = self.mosaic['wcs'].wcs_pix2world(m_j, m_i, 0)
             j, i = img['wcs'].wcs_world2pix(m_ra, m_dec, 0)
@@ -160,7 +180,6 @@ class FITsMosaic(Mosaic):
 
             print("MOSAIC:", self.mosaic['wcs'])
             print("IMG:", img['wcs'])
-
 
             def pickornan(x, i, j):
                 ij_usable = i>0
@@ -184,6 +203,18 @@ class FITsMosaic(Mosaic):
             fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("t.fits", overwrite=True)
 
             if debug:
+                tm = m_i 
+                fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("mi.fits", overwrite=True)
+                
+                tm = m_j 
+                fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("mj.fits", overwrite=True)
+
+                tm = self.mosaic['flux']
+                fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("tmf.fits", overwrite=True)
+                
+                tm = self.mosaic['flux'][m_i, m_j]
+                fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("tmr.fits", overwrite=True)
+
                 tm = pickornan(img['flux'], i, j)
                 fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("t.fits", overwrite=True)
 
@@ -211,6 +242,8 @@ class FITsMosaic(Mosaic):
 
 
     def writeto(self, fn):
+        self.mosaic['sig'] = self.mosaic['flux'] / self.mosaic['var']**0.5
+
         fits.HDUList([fits.PrimaryHDU()] + [
             fits.ImageHDU(self.mosaic[k], header=self.mosaic['wcs'].to_header())
                 for k in self.mosaic if k != 'wcs'
