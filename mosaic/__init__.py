@@ -103,10 +103,29 @@ class FITsMosaic(Mosaic):
         if self.mock:
             img['var'] = 10*np.ones_like(img['var'])
             img['flux'] = -10*np.ones_like(img['var'])
+            sj, si = map(int, img['wcs'].wcs_world2pix(83, 22, 0))
+            sjd, sid = map(int, img['wcs'].wcs_world2pix(83, 24, 0))
+
+            print("mock crab at", si, sj, "and", sid, sjd)
+
+            img['flux'][
+                    si-4:si+4,
+                    sj-4:sj+4,
+                    ] = 40
+            img['flux'][
+                    sid-4:sid+4,
+                    sjd-4:sjd+4,
+                    ] = 60
+
+
             img['flux'][
                     (int(img['flux'].shape[0]/2)-10):(int(img['flux'].shape[0]/2)+10),
                     (int(img['flux'].shape[1]/2)-10):(int(img['flux'].shape[1]/2)+10),
-                    ] = 100
+                    ] = 10
+            img['flux'][
+                    (int(img['flux'].shape[0]/2)-3):(int(img['flux'].shape[0]/2)+3),
+                    (int(img['flux'].shape[1]/2)):(int(img['flux'].shape[1]/2)+30),
+                    ] = 20
             fits.ImageHDU(img['flux'], header=img['wcs'].to_header()).writeto("mock-%s.fits"%fn.replace("/","_"), overwrite=True)
         
 
@@ -135,7 +154,7 @@ class FITsMosaic(Mosaic):
             fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("tmr.fits", overwrite=True)
 
             m_ra, m_dec = self.mosaic['wcs'].wcs_pix2world(m_j, m_i, 0)
-            i, j = img['wcs'].wcs_world2pix(m_ra, m_dec, 0)
+            j, i = img['wcs'].wcs_world2pix(m_ra, m_dec, 0)
             i = i.astype(int)
             j = j.astype(int)
 
@@ -161,13 +180,16 @@ class FITsMosaic(Mosaic):
             tm = pickornan(self.mosaic['flux'], m_i, m_j)
             fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("tm.fits", overwrite=True)
 
+            tm = pickornan(img['flux'], i, j)
+            fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("t.fits", overwrite=True)
+
             if debug:
                 tm = pickornan(img['flux'], i, j)
                 fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("t.fits", overwrite=True)
 
                 tm=np.zeros_like(i)
                 tm[ij_usable] = img['flux'][i[ij_usable], j[ij_usable]]
-                tm[~ij_usable] = -100
+                tm[~ij_usable] = -20
                 fits.ImageHDU(np.transpose(tm), header=self.mosaic['wcs'].to_header()).writeto("t.fits", overwrite=True)
 
                 tm = i 
