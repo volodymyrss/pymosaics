@@ -17,7 +17,7 @@ Merge FITS file mosaic
 ## Installation
 
 ```bash
-$ pip install pymosaics
+$ pip install pymosaic-fits
 ```
 
 ## Example:
