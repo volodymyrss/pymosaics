@@ -1,5 +1,8 @@
 # pymosaics
 
+![](https://travis-ci.org/volodymyrss/pymosaics.svg?branch=master)
+
+
 Merge FITS file mosaic
 
 * maps all images in the same pixels (taken from one of the images, or healpix)
