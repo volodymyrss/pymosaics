@@ -7,7 +7,13 @@ Merge FITS file mosaic
 
 * output mosaics format is compatible with input - allowing map-reduce operations
 
-Example:
+## Installation
+
+```bash
+$ pip install pymosaics
+```
+
+## Example:
 
 ```bash
 $ mosaic tests/data/isgri_sky_ima_{1,2}.fits.gz  t.fits
