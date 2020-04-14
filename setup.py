@@ -8,7 +8,7 @@ if {'pytest', 'test', 'ptr'}.intersection(sys.argv):
     setup_requires.append('pytest-runner')
 
 
-setup(description="oda-sparql",
+setup(description="pymosaic-fits",
       long_description=open('README.md').read(),
       version='0.2.0',
       include_package_data=True,
