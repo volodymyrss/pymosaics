@@ -87,6 +87,8 @@ class HealpixMosaic(Mosaic):
     def writeto(self, fn: str):
         healpy.write_map(fn, self.mosaic)
 
+def img_parser_own(f):  #eminmax
+    return None
 
 def img_parser_osa(f):  #eminmax
     def imatype_selector(_f, n):
@@ -109,6 +111,7 @@ def img_parser_osa(f):  #eminmax
 
 img_parsers = {
         'osa': img_parser_osa,
+        'own': img_parser_own,
 }
 
 
@@ -122,6 +125,8 @@ class FITsMosaic(Mosaic):
 
         f = fits.open(fn)
 
+        img = None
+        failures=[]
         for n, img_parser in img_parsers.items():
             try:
                 img = img_parser(f)
@@ -129,6 +134,10 @@ class FITsMosaic(Mosaic):
                 break
             except Exception as e:
                 print("img parser failed", n, e)
+                failures.append("img parser failed %s %s"%(n, e))
+
+        if img is None:
+            raise RuntimeError("all image parsers failed for %s: %s"%(fn, ", ".join(failures)))
 
         if self.mock:
             img['var'] = 10*np.ones_like(img['var'])
@@ -244,10 +253,25 @@ class FITsMosaic(Mosaic):
     def writeto(self, fn):
         self.mosaic['sig'] = self.mosaic['flux'] / self.mosaic['var']**0.5
 
-        fits.HDUList([fits.PrimaryHDU()] + [
-            fits.ImageHDU(self.mosaic[k], header=self.mosaic['wcs'].to_header())
-                for k in self.mosaic if k != 'wcs'
-        ]).writeto(fn, overwrite=True)
+        el = []
+
+        for k in self.mosaic:
+            if k == 'wcs': continue
+
+            h = self.mosaic['wcs'].to_header()
+            h['EXTNAME']=dict(
+                        flux='INTENSITY',
+                        var='VARIANCE',
+                        sig='SIGNIFICANCE',
+                        ex='EXPOSURE',
+                        n='NIMAGE',
+                    )[k]
+            h['IMATYPE'] = h['EXTNAME']
+            e = fits.ImageHDU(self.mosaic[k], header=h)
+
+            el.append(e)
+
+        fits.HDUList([fits.PrimaryHDU()] + el).writeto(fn, overwrite=True)
 
 @click.command()
 @click.argument("in_fn", nargs=-1)
