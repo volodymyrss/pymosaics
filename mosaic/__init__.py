@@ -20,16 +20,52 @@ def mosaic_fn_list(in_fn: List[str], out_fn: str, out_format: str, mock=False):
             m.add(fn)
 
         m.writeto(out_fn)
+    elif out_format == "healpix":
+        m = HealpixMosaic(mock=False)
+        for fn in in_fn:
+            m.add(fn)
+
+        m.writeto(out_fn)
     else:
         raise RuntimeError
+
+def pickornan(x, i, j):
+    ij_usable = i>0
+    ij_usable &= j>0
+    ij_usable &= i<x.shape[0]
+    ij_usable &= j<x.shape[1]
+
+    y = np.zeros_like(i, dtype=np.float32)
+    y[ij_usable] = x[i[ij_usable], j[ij_usable]]
+    y[~ij_usable] = 300 #float('nan')
+    return y
 
 
 class Mosaic:
     def writeto(self, fn: str):
-        pass
+        raise RuntimeError
 
     def add(self, fn: str):
-        pass
+        print("adding", fn)
+
+    def parse_in(self, fn):
+        f = fits.open(fn)
+
+        img = None
+        failures=[]
+        for n, img_parser in img_parsers.items():
+            try:
+                img = img_parser(f)
+                print("img parser succeeded", n)
+                break
+            except Exception as e:
+                print("img parser failed", n, e)
+                failures.append("img parser failed %s %s"%(n, e))
+
+        if img is None:
+            raise RuntimeError("all image parsers failed for %s: %s"%(fn, ", ".join(failures)))
+
+        return img
 
     @staticmethod
     def m_s(a, _s_a, b, _s_b):
@@ -57,8 +93,24 @@ class Mosaic:
     def m(a, _s_a, b, _s_b):
         _m = ~np.isnan(_s_b(b['flux']))
 
+        print("Mask shape", _m.shape)
+        print("base shape", a['flux'].shape)
+        print("extra shape", b['flux'].shape)
+        print("extra shape adopted", _s_b(b['flux']).shape)
+
         s_a = lambda x:_s_a(x)[_m]
         s_b = lambda x:_s_b(x)[_m]
+
+        def s_a(x):
+            print('s_a x shape', x.shape)
+            print('s_a _m shape', _m.shape)
+            print('_s_a(x) _m shape', _s_a(x).shape)
+            return _s_a(x)[_m]
+
+        def s_b(x):
+            print('s_b x shape', x.shape)
+            print('s_b _m shape', _m.shape)
+            return _s_b(x)[_m]
 
         c=dict()
         c['flux'] = a['flux']
@@ -74,18 +126,6 @@ class Mosaic:
 
         return c
 
-class HealpixMosaic(Mosaic):
-    def __init__(self, nsides=64, mock=False):
-        self.nsides = nsides
-        self.mosaic = dict(
-                flux = np.zeros(healpy.nsides2npix(nsides)),
-                var = np.zeros(healpy.nsides2npix(nsides)),
-                ex = np.zeros(healpy.nsides2npix(nsides)),
-                n = np.zeros(healpy.nsides2npix(nsides)),
-            )
-
-    def writeto(self, fn: str):
-        healpy.write_map(fn, self.mosaic)
 
 def img_parser_own(f):  #eminmax
     return None
@@ -121,23 +161,10 @@ class FITsMosaic(Mosaic):
         self.mock = mock
 
     def add(self, fn):
-        print("adding", fn)
+        super(FITsMosaic, self).add(fn)
 
-        f = fits.open(fn)
+        img = self.parse_in(fn)
 
-        img = None
-        failures=[]
-        for n, img_parser in img_parsers.items():
-            try:
-                img = img_parser(f)
-                print("img parser succeeded", n)
-                break
-            except Exception as e:
-                print("img parser failed", n, e)
-                failures.append("img parser failed %s %s"%(n, e))
-
-        if img is None:
-            raise RuntimeError("all image parsers failed for %s: %s"%(fn, ", ".join(failures)))
 
         if self.mock:
             img['var'] = 10*np.ones_like(img['var'])
@@ -190,57 +217,6 @@ class FITsMosaic(Mosaic):
             print("MOSAIC:", self.mosaic['wcs'])
             print("IMG:", img['wcs'])
 
-            def pickornan(x, i, j):
-                ij_usable = i>0
-                ij_usable &= j>0
-                ij_usable &= i<x.shape[0]
-                ij_usable &= j<x.shape[1]
-
-                y = np.zeros_like(i, dtype=np.float32)
-                y[ij_usable] = x[i[ij_usable], j[ij_usable]]
-                y[~ij_usable] = float('nan')
-                return y
-
-            tm = pickornan(self.mosaic['flux'], m_i, m_j)
-            fits.ImageHDU(tm - self.mosaic['flux'], header=self.mosaic['wcs'].to_header()).writeto("tmd.fits", overwrite=True)
-
-            
-            tm = pickornan(self.mosaic['flux'], m_i, m_j)
-            fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("tm.fits", overwrite=True)
-
-            tm = pickornan(img['flux'], i, j)
-            fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("t.fits", overwrite=True)
-
-            if debug:
-                tm = m_i 
-                fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("mi.fits", overwrite=True)
-                
-                tm = m_j 
-                fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("mj.fits", overwrite=True)
-
-                tm = self.mosaic['flux']
-                fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("tmf.fits", overwrite=True)
-                
-                tm = self.mosaic['flux'][m_i, m_j]
-                fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("tmr.fits", overwrite=True)
-
-                tm = pickornan(img['flux'], i, j)
-                fits.ImageHDU(tm, header=self.mosaic['wcs'].to_header()).writeto("t.fits", overwrite=True)
-
-                tm=np.zeros_like(i)
-                tm[ij_usable] = img['flux'][i[ij_usable], j[ij_usable]]
-                tm[~ij_usable] = -20
-                fits.ImageHDU(np.transpose(tm), header=self.mosaic['wcs'].to_header()).writeto("t.fits", overwrite=True)
-
-                tm = i 
-                tm[~ij_usable] = -100
-                #tm = img['flux'][i, j]
-                fits.ImageHDU(np.transpose(tm), header=self.mosaic['wcs'].to_header()).writeto("i.fits", overwrite=True)
-                
-                tm = j 
-                tm[~ij_usable] = -100
-                #tm = img['flux'][i, j]
-                fits.ImageHDU(np.transpose(tm), header=self.mosaic['wcs'].to_header()).writeto("j.fits", overwrite=True)
 
             self.mosaic.update(self.m(
                         self.mosaic,
@@ -272,6 +248,58 @@ class FITsMosaic(Mosaic):
             el.append(e)
 
         fits.HDUList([fits.PrimaryHDU()] + el).writeto(fn, overwrite=True)
+
+
+class HealpixMosaic(Mosaic):
+    def __init__(self, nsides=128, mock=False):
+        self.nsides = nsides
+        self.mosaic = dict(
+                flux = np.zeros(healpy.nside2npix(nsides), dtype=np.float32),
+                var = np.zeros(healpy.nside2npix(nsides), dtype=np.float32),
+                ex = np.zeros(healpy.nside2npix(nsides), dtype=np.float32),
+                n = np.zeros(healpy.nside2npix(nsides), dtype=np.float32),
+            )
+
+    def add(self, fn):
+        img = self.parse_in(fn)
+
+        px = np.arange(self.mosaic['flux'].shape[0])
+        ra, dec = healpy.pix2ang(self.nsides, px, lonlat=True)
+
+        i, j = img['wcs'].wcs_world2pix(ra, dec, 0)
+        i = i.astype(np.int32)
+        j = j.astype(np.int32)
+        
+
+        def tohp(x):
+  #          print("tohp x", x.shape)
+ #           print("tohp x", x.flatten().shape)
+#            print("tohp i", i.shape)
+            #print("tohp j", j.shape)
+            r = pickornan(x, i, j).flatten()
+
+            print("tohp", r[~np.isnan(r)])
+
+            return r
+
+        self.mosaic.update(self.m(
+                    self.mosaic,
+                    lambda x:x,
+                    img,
+                    tohp,
+                ))
+
+
+    def writeto(self, fn: str):
+        import matplotlib
+        matplotlib.use('agg')
+        from matplotlib import pylab as plt
+
+        f = plt.figure()
+        healpy.mollview(self.mosaic['flux'])
+        plt.savefig("out.png")
+
+        healpy.write_map(fn, self.mosaic['flux'], overwrite=True)
 
 @click.command()
 @click.argument("in_fn", nargs=-1)
