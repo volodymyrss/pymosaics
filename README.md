@@ -1,5 +1,9 @@
 # pymosaics
 
+![](https://travis-ci.org/volodymyrss/pymosaics.svg?branch=master)
+
+__CAUTION__: *this is a simple functional project, although it should work as generally expected, do make sanity checks and make sure you understand what the mosaic does - as usual.*
+
 Merge FITS file mosaic
 
 * maps all images in the same pixels (taken from one of the images, or healpix)
@@ -14,7 +18,7 @@ Merge FITS file mosaic
 ## Installation
 
 ```bash
-$ pip install pymosaics
+$ pip install pymosaic-fits
 ```
 
 ## Example:
@@ -26,6 +30,6 @@ $ mosaic tests/data/isgri_sky_ima_{1,2}.fits.gz out.fits --pixels healpix # heal
 ```
 
 ```python
-import mosaic$                                                               
+import mosaic                                                            
 mosaic.mosaic_fn_list(["tests/data/isgri_sky_ima_1.fits.gz", "tests/data/isgri_sky_ima_2.fits.gz"], "out.fits")
 ```

@@ -30,6 +30,30 @@ def mosaic_fn_list(in_fn: List[str], out_fn: str, \
     else:
         raise RuntimeError
 
+def mosaic_header_list(in_fn, \
+                   pixels="healpix", healpix_nsides=512, mock=False):
+
+    print("input: ")
+    for fn in in_fn:
+        print(fn.filename())
+    print("-------")
+
+    if pixels == "first":
+        m = FITsMosaic(mock)
+        for fn in in_fn:
+            m.add(fn)
+
+        #m.writeto(out_fn)
+    elif pixels == "healpix":
+        m = HealpixMosaic(nsides=healpix_nsides, mock=mock)
+        for fn in in_fn:
+            m.add(fn)
+
+        #m.writeto(out_fn)
+    else:
+        raise RuntimeError
+    return m
+
 def pickornan(x, i, j):
     ij_usable = i>0
     ij_usable &= j>0
@@ -47,10 +71,21 @@ class Mosaic:
         raise RuntimeError
 
     def add(self, fn: str):
-        print("adding", fn)
+        if isinstance(fn, str):
+            print("adding", fn)
+        else:
+            try:
+                print("adding", fn.filename())
+            except:
+                pass
 
     def parse_in(self, fn):
-        f = fits.open(fn)
+        if isinstance(fn, str):
+            f = fits.open(fn)
+        elif not self.mock:
+            f=fn
+        else:
+            raise RuntimeError('No header input for mock')
 
         img = None
         failures=[]
