@@ -257,9 +257,8 @@ class FITsMosaic(Mosaic):
                         lambda x:pickornan(x, i, j),
                     ))
 
-
-    def writeto(self, fn):
-        self.mosaic['sig'] = self.mosaic['flux'] / self.mosaic['var']**0.5
+    def to_hdu_list(self):
+        self.mosaic['sig'] = self.mosaic['flux'] / self.mosaic['var'] ** 0.5
 
         el = []
 
@@ -267,19 +266,23 @@ class FITsMosaic(Mosaic):
             if k == 'wcs': continue
 
             h = self.mosaic['wcs'].to_header()
-            h['EXTNAME']=dict(
-                        flux='INTENSITY',
-                        var='VARIANCE',
-                        sig='SIGNIFICANCE',
-                        ex='EXPOSURE',
-                        n='NIMAGE',
-                    )[k]
+            h['EXTNAME'] = dict(
+                flux='INTENSITY',
+                var='VARIANCE',
+                sig='SIGNIFICANCE',
+                ex='EXPOSURE',
+                n='NIMAGE',
+            )[k]
             h['IMATYPE'] = h['EXTNAME']
             e = fits.ImageHDU(self.mosaic[k], header=h)
 
             el.append(e)
 
-        fits.HDUList([fits.PrimaryHDU()] + el).writeto(fn, overwrite=True)
+        return fits.HDUList([fits.PrimaryHDU()] + el)
+
+
+    def writeto(self, fn):
+        self.to_hdu_list().writeto(fn, overwrite=True)
 
 
 class HealpixMosaic(Mosaic):
@@ -334,7 +337,7 @@ class HealpixMosaic(Mosaic):
 
         self.writeto_reproj(fn)
 
-    def writeto_reproj(self, fn):
+    def to_hdu_list(self):
         #self.mosaic['flux'] overwrite=True)
 
         ra, dec = self.radec_grid()
@@ -392,8 +395,10 @@ class HealpixMosaic(Mosaic):
             e = fits.ImageHDU(mp, header=h)
 
             el.append(e)
+        return fits.HDUList([fits.PrimaryHDU()] + el)
 
-        fits.HDUList([fits.PrimaryHDU()] + el).writeto(fn, overwrite=True)
+    def writeto_reproj(self, fn):
+        self.to_hdu_list().writeto(fn, overwrite=True)
 
 
 
