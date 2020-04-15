@@ -4,10 +4,8 @@ python:
   - "3.6"      # current default Python on Travis CI
   - "3.7"
   - "3.8"
-# command to install dependencies
 install:
-  - pip install '.[testing]'
-# command to run tests
+  - pip install -e '.[testing]'
 script:
   - mypy mosaic
   - pylint -E mosaic
