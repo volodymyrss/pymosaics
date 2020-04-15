@@ -1,6 +1,6 @@
 # pymosaics
 
-![](https://travis-ci.org/volodymyrss/pymosaics.svg?branch=master)
+[![Build Status](https://travis-ci.org/volodymyrss/pymosaics.svg?branch=master)](https://travis-ci.org/volodymyrss/pymosaics)
 
 __CAUTION__: *this is a simple functional project, although it should work as generally expected, do make sanity checks and make sure you understand what the mosaic does - as usual.*
 
