@@ -1,91 +1,89 @@
 import click
 
-from typing import List
+from typing import List, Union
 
-from astropy import wcs as pywcs
-from astropy.io import fits
+from astropy import wcs as pywcs # type: ignore
+from astropy.io import fits # type: ignore
+from astropy.io.fits import HDUList # type: ignore
 
-import healpy
+import healpy # type: ignore
 
-import numpy as np
+import numpy as np # type: ignore
 
 debug = False
 
-def mosaic_fn_list(in_fn: List[str], out_fn: str, \
-                   pixels="healpix", healpix_nsides=512, mock=False):
-    print("input: %s output: %s"%( ", ".join(in_fn), out_fn))
+def mosaic_list(in_fs: List[Union[str, fits.HDUList]], 
+                out_fn: Union[str, None]=None, 
+                pixels="healpix", 
+                healpix_nsides=512, 
+                mock=False):
+    print("input: %s output: %s"%( ", ".join(map(str, in_fs)), out_fn))
 
     if pixels == "first":
-        m = FITsMosaic(mock)
-        for fn in in_fn:
-            m.add(fn)
+        m = FITsMosaic(mock) # type: Mosaic
+        for in_f in in_fs:
+            m.add(in_f)
 
-        m.writeto(out_fn)
     elif pixels == "healpix":
         m = HealpixMosaic(nsides=healpix_nsides, mock=mock)
-        for fn in in_fn:
-            m.add(fn)
+        for in_f in in_fs:
+            m.add(in_f)
 
-        m.writeto(out_fn)
     else:
         raise RuntimeError
 
-def mosaic_header_list(in_fn, \
-                   pixels="healpix", healpix_nsides=512, mock=False):
+    if out_fn is not None:
+        m.writeto(out_fn)
 
-    print("input: ")
-    for fn in in_fn:
-        print(fn.filename())
-    print("-------")
-
-    if pixels == "first":
-        m = FITsMosaic(mock)
-        for fn in in_fn:
-            m.add(fn)
-
-        #m.writeto(out_fn)
-    elif pixels == "healpix":
-        m = HealpixMosaic(nsides=healpix_nsides, mock=mock)
-        for fn in in_fn:
-            m.add(fn)
-
-        #m.writeto(out_fn)
-    else:
-        raise RuntimeError
     return m
 
-def pickornan(x, i, j):
+def mosaic_header_list(*a, **aa):
+    raise RuntimeError("this is a compatibility placeholder, please use mosaic_list")
+
+def mosaic_fn_list(*a, **aa):
+    raise RuntimeError("this is a compatibility placeholder, please use mosaic_list")
+
+def pickornan(x, i, j) -> np.ndarray:
     ij_usable = i>0
     ij_usable &= j>0
     ij_usable &= i<x.shape[0]
     ij_usable &= j<x.shape[1]
 
-    y = np.zeros_like(i, dtype=np.float32)
+    # pylint: disable=unsupported-assignment-operation
+    y = np.zeros_like(i, dtype=np.float32) 
     y[ij_usable] = x[i[ij_usable], j[ij_usable]]
     y[~ij_usable] = np.nan
-    return y
+    return y 
 
 
 class Mosaic:
+    mock = False
+
     def writeto(self, fn: str):
         raise RuntimeError
 
-    def add(self, fn: str):
-        if isinstance(fn, str):
-            print("adding", fn)
-        else:
-            try:
-                print("adding", fn.filename())
-            except:
-                pass
+    def add(self, f: Union[str, HDUList] ):
+        pass
 
-    def parse_in(self, fn):
-        if isinstance(fn, str):
-            f = fits.open(fn)
-        elif not self.mock:
-            f=fn
+
+    def parse_in(self, in_f):
+        if isinstance(in_f, str):
+            print("parsing", in_f)
+            fn = in_f
+            f = fits.open(in_f)
+
+        elif isinstance(in_f, HDUList):
+            f = in_f
+            try:
+                fn = in_f.filename()
+                print("parsing hdulist", fn)
+            except Exception as e:
+                fn = "unknown"
+                print("parsing hdulist with no detectable filename?")
+
         else:
-            raise RuntimeError('No header input for mock')
+            raise RuntimeError("unknown input " +repr(f))
+
 
         img = None
         failures=[]
@@ -99,7 +97,7 @@ class Mosaic:
                 failures.append("img parser failed %s %s"%(n, e))
 
         if img is None:
-            raise RuntimeError("all image parsers failed for %s: %s"%(fn, ", ".join(failures)))
+            raise RuntimeError("all image parsers failed for %s: %s"%(f, ", ".join(failures)))
 
         if self.mock:
             img['var'] = 10*np.ones_like(img['var'])
@@ -225,10 +223,10 @@ class FITsMosaic(Mosaic):
         self.mosaic = None
         self.mock = mock
 
-    def add(self, fn):
-        super(FITsMosaic, self).add(fn)
+    def add(self, in_f):
+        super(FITsMosaic, self).add(in_f)
 
-        img = self.parse_in(fn)
+        img = self.parse_in(in_f)
 
 
         
@@ -294,8 +292,8 @@ class HealpixMosaic(Mosaic):
         px = np.arange(healpy.nside2npix(self.nsides))
         return healpy.pix2ang(self.nsides, px, lonlat=True)
 
-    def add(self, fn):
-        img = self.parse_in(fn)
+    def add(self, in_f):
+        img = self.parse_in(in_f)
 
         ra, dec = self.radec_grid()
 
@@ -305,9 +303,7 @@ class HealpixMosaic(Mosaic):
         
 
         def tohp(x):
-            r = pickornan(x, j, i).flatten()
-
-            return r
+            return pickornan(x, j, i).flatten() # pylint: disable=no-member
 
         if self.mosaic is None:
             self.mosaic = dict()
@@ -325,7 +321,8 @@ class HealpixMosaic(Mosaic):
 
 
     def writeto(self, fn: str):
-        import matplotlib
+        # only import this as needed
+        import matplotlib # type: ignore
         matplotlib.use('agg')
         from matplotlib import pylab as plt
 
@@ -412,4 +409,5 @@ def mosaic(in_fn, out_fn, pixels, healpix_nsides, mock):
 
 
 if __name__ == "__main__":
+    # pylint: disable=no-value-for-parameter
     mosaic()
