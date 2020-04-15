@@ -35,7 +35,7 @@ def mosaic_header_list(in_fn, \
 
     print("input: ")
     for fn in in_fn:
-        print(fn.filename)
+        print(fn.filename())
     print("-------")
 
     if pixels == "first":
@@ -71,7 +71,13 @@ class Mosaic:
         raise RuntimeError
 
     def add(self, fn: str):
-        print("adding", fn)
+        if isinstance(fn, str):
+            print("adding", fn)
+        else:
+            try:
+                print("adding", fn.filename())
+            except:
+                pass
 
     def parse_in(self, fn):
         if isinstance(fn, str):
