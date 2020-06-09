@@ -161,8 +161,8 @@ class Mosaic:
         def update_keywords():
 
             additive_kw = ['ONTIME', 'EXPOSURE', 'TELAPSE']
-            incremental_kw_min = ['TSTART', 'DATE-OBS', 'TFIRST', 'DATE']
-            incremental_kw_max = ['TSTOP', 'DATE-END', 'TLAST']
+            incremental_kw_min = ['TSTART', 'DATE-OBS', 'TFIRST', 'DATE', 'MJD-OBS']
+            incremental_kw_max = ['TSTOP', 'DATE-END', 'TLAST', 'MJD-END']
             average_kw = ['DEADC']
 
             keyword_list = [(additive_kw, lambda x, y: x + y),
@@ -346,7 +346,8 @@ class HealpixMosaic(Mosaic):
             self.mosaic = dict()
 
             for k, v in img.items():
-                if k == 'wcs': continue
+                if k == 'wcs' or k == 'header':
+                    continue
                 self.mosaic[k] = tohp(img[k])
         else:
             self.mosaic.update(self.m(
@@ -378,7 +379,7 @@ class HealpixMosaic(Mosaic):
 
         #print("max exposure", np.nanmax(self.mosaic['ex']))
 
-        m_best = self.mosaic['ex']>(np.nanmax(self.mosaic['ex'])/2.)
+        m_best = self.mosaic['ex'] > (np.nanmax(self.mosaic['ex'])/2.)
         c_ra = np.nanmean(ra[m_best])
         c_dec = np.nanmean(dec[m_best])
         c_rad_deg = 60
@@ -410,7 +411,8 @@ class HealpixMosaic(Mosaic):
         self.mosaic['sig'] = self.mosaic['flux'] / self.mosaic['var']**0.5
         el = []
         for k in self.mosaic:
-            if k == 'wcs': continue
+            if k == 'wcs' or k == 'keywords' or k == 'header':
+                continue
 
             h = w.to_header()
             h['EXTNAME']=dict(
@@ -421,7 +423,9 @@ class HealpixMosaic(Mosaic):
                         n='NIMAGE',
                     )[k]
             h['IMATYPE'] = h['EXTNAME']
-
+            for key, value in self.mosaic['keywords'].items():
+                #print('Update keyword %s = '%(key), value)
+                h[key] = value
             mp = np.zeros((ni, nj))
             mp[:,:] = np.nan 
             mp[m_i, m_j] = self.mosaic[k][px]
