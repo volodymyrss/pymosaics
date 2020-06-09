@@ -17,7 +17,7 @@ def mosaic_list(in_fs: List[Union[str, fits.HDUList]],
                 pixels="healpix", 
                 healpix_nsides=512, 
                 mock=False):
-    print("input: %s output: %s"%( ", ".join(map(str, in_fs)), out_fn))
+    # print("input: %s output: %s"%( ", ".join(map(str, in_fs)), out_fn))
 
     if pixels == "first":
         m = FITsMosaic(mock) # type: Mosaic
@@ -68,7 +68,7 @@ class Mosaic:
 
     def parse_in(self, in_f):
         if isinstance(in_f, str):
-            print("parsing", in_f)
+            #print("parsing", in_f)
             fn = in_f
             f = fits.open(in_f)
 
@@ -76,10 +76,10 @@ class Mosaic:
             f = in_f
             try:
                 fn = in_f.filename()
-                print("parsing hdulist", fn)
+                #print("parsing hdulist", fn)
             except Exception as e:
                 fn = "unknown"
-                print("parsing hdulist with no detectable filename?")
+                #print("parsing hdulist with no detectable filename?")
 
         else:
             raise RuntimeError("unknown input " +repr(f))
@@ -90,7 +90,7 @@ class Mosaic:
         for n, img_parser in img_parsers.items():
             try:
                 img = img_parser(f)
-                print("img parser succeeded", n)
+                #print("img parser succeeded", n)
                 break
             except Exception as e:
                 print("img parser failed", n, e)
@@ -157,23 +157,47 @@ class Mosaic:
 
     @staticmethod
     def m(a, _s_a, b, _s_b):
+
+        def update_keywords():
+
+            additive_kw = ['ONTIME', 'EXPOSURE', 'TELAPSE']
+            incremental_kw_min = ['TSTART', 'DATE-OBS', 'TFIRST', 'DATE', 'MJD-OBS']
+            incremental_kw_max = ['TSTOP', 'DATE-END', 'TLAST', 'MJD-END']
+            average_kw = ['DEADC']
+
+            keyword_list = [(additive_kw, lambda x, y: x + y),
+                            (average_kw, lambda x, y: (x + y) / 2),
+                            (incremental_kw_min, lambda x, y: (x if x <= y else y)),
+                            (incremental_kw_max, lambda x, y: (x if x >= y else y))]
+
+            keywords = dict()
+
+            for kk in keyword_list:
+                for keyword in kk[0]:
+                    try:
+                        keywords.update({keyword: kk[1](a['header'][keyword], b['header'][keyword])})
+                    except:
+                        Warning('Keyword ' + keyword + ' not found')
+
+            return keywords
+
         _m_a = ~np.isnan(_s_a(a['flux']))
         _m_b = ~np.isnan(_s_b(b['flux']))
         _m = _m_a & _m_b
         
-        c=dict()
+        c = dict()
 
-        print("m: _m shape", _m.shape)
-        print("m: _m_a shape", _m_a.shape)
-        print("m: _m_b shape", _m_b.shape)
+        #print("m: _m shape", _m.shape)
+        #print("m: _m_a shape", _m_a.shape)
+        #print("m: _m_b shape", _m_b.shape)
 
         for k in 'flux', 'var', 'ex', 'n':
             c[k] = _s_a(a[k])
             c[k][~_m_a & _m_b] = _s_b(b[k])[~_m_a & _m_b]
 
 
-        print("max exposure was", np.nanmax(a['ex']))
-        print("max exposure to add", np.nanmax(b['ex']))
+        #print("max exposure was", np.nanmax(a['ex']))
+        #print("max exposure to add", np.nanmax(b['ex']))
 
         s_a = lambda x:_s_a(x)[_m]
         s_b = lambda x:_s_b(x)[_m]
@@ -184,8 +208,9 @@ class Mosaic:
         c['flux'][_m] = c['flux'][_m] * c['var'][_m]
         c['ex'][_m] = s_a(a['ex']) + s_b(b['ex'])
         c['n'][_m] = s_a(a['n']) + s_b(b['n'])
+        c['keywords'] = update_keywords()
 
-        print("max exposure become", np.nanmax(c['ex']))
+        #print("max exposure become", np.nanmax(c['ex']))
 
         return c
 
@@ -205,10 +230,11 @@ def img_parser_osa(f):  #eminmax
         flux = imatype_selector(f, 'INTENSITY').data,
         var = imatype_selector(f, 'VARIANCE').data,
         ex = imatype_selector(f, 'EXPOSURE').data,
+        header = imatype_selector(f, 'INTENSITY').header
     )
     img['n'] = np.ones_like(img['ex'])
 
-    img['flux'][img['var']<=0] = np.nan 
+    img['flux'][img['var'] <= 0] = np.nan
 
     return img
 
@@ -224,12 +250,13 @@ class FITsMosaic(Mosaic):
         self.mock = mock
 
     def add(self, in_f):
+
+        #
+        # This ensures the type
+        #
         super(FITsMosaic, self).add(in_f)
 
         img = self.parse_in(in_f)
-
-
-        
 
         if self.mosaic is None: 
             print("first mosaic")
@@ -246,8 +273,8 @@ class FITsMosaic(Mosaic):
             i = i.astype(int)
             j = j.astype(int)
 
-            print("MOSAIC:", self.mosaic['wcs'])
-            print("IMG:", img['wcs'])
+            #print("MOSAIC:", self.mosaic['wcs'])
+            #print("IMG:", img['wcs'])
 
 
             self.mosaic.update(self.m(
@@ -263,7 +290,11 @@ class FITsMosaic(Mosaic):
         el = []
 
         for k in self.mosaic:
-            if k == 'wcs': continue
+
+            #print(k)
+
+            if k == 'wcs' or k == 'keywords' or k == 'header':
+                continue
 
             h = self.mosaic['wcs'].to_header()
             h['EXTNAME'] = dict(
@@ -274,6 +305,9 @@ class FITsMosaic(Mosaic):
                 n='NIMAGE',
             )[k]
             h['IMATYPE'] = h['EXTNAME']
+            for key, value in self.mosaic['keywords'].items():
+                #print('Update keyword %s = '%(key), value)
+                h[key] = value
             e = fits.ImageHDU(self.mosaic[k], header=h)
 
             el.append(e)
@@ -312,7 +346,8 @@ class HealpixMosaic(Mosaic):
             self.mosaic = dict()
 
             for k, v in img.items():
-                if k == 'wcs': continue
+                if k == 'wcs' or k == 'header':
+                    continue
                 self.mosaic[k] = tohp(img[k])
         else:
             self.mosaic.update(self.m(
@@ -342,14 +377,14 @@ class HealpixMosaic(Mosaic):
 
         ra, dec = self.radec_grid()
 
-        print("max exposure", np.nanmax(self.mosaic['ex']))
+        #print("max exposure", np.nanmax(self.mosaic['ex']))
 
-        m_best = self.mosaic['ex']>(np.nanmax(self.mosaic['ex'])/2.)
+        m_best = self.mosaic['ex'] > (np.nanmax(self.mosaic['ex'])/2.)
         c_ra = np.nanmean(ra[m_best])
         c_dec = np.nanmean(dec[m_best])
         c_rad_deg = 60
 
-        print("center ra, dec", c_ra, c_dec)
+        #print("center ra, dec", c_ra, c_dec)
 
         w = pywcs.WCS(naxis=2)
         ni, nj = 800, 800
@@ -376,7 +411,8 @@ class HealpixMosaic(Mosaic):
         self.mosaic['sig'] = self.mosaic['flux'] / self.mosaic['var']**0.5
         el = []
         for k in self.mosaic:
-            if k == 'wcs': continue
+            if k == 'wcs' or k == 'keywords' or k == 'header':
+                continue
 
             h = w.to_header()
             h['EXTNAME']=dict(
@@ -387,7 +423,9 @@ class HealpixMosaic(Mosaic):
                         n='NIMAGE',
                     )[k]
             h['IMATYPE'] = h['EXTNAME']
-
+            for key, value in self.mosaic['keywords'].items():
+                #print('Update keyword %s = '%(key), value)
+                h[key] = value
             mp = np.zeros((ni, nj))
             mp[:,:] = np.nan 
             mp[m_i, m_j] = self.mosaic[k][px]

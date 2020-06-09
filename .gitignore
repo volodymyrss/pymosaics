@@ -1,0 +1,8 @@
+build
+dist
+pymosaic_fits.egg-info
+COPYING
+.eggs
+.idea
+mosaic/__pycache__
+tests/__pycache__
