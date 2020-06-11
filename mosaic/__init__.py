@@ -305,9 +305,10 @@ class FITsMosaic(Mosaic):
                 n='NIMAGE',
             )[k]
             h['IMATYPE'] = h['EXTNAME']
-            for key, value in self.mosaic['keywords'].items():
-                #print('Update keyword %s = '%(key), value)
-                h[key] = value
+            if 'keywords' in self.mosaic.keys():
+                for key, value in self.mosaic['keywords'].items():
+                    #print('Update keyword %s = '%(key), value)
+                    h[key] = value
             e = fits.ImageHDU(self.mosaic[k], header=h)
 
             el.append(e)
@@ -423,9 +424,10 @@ class HealpixMosaic(Mosaic):
                         n='NIMAGE',
                     )[k]
             h['IMATYPE'] = h['EXTNAME']
-            for key, value in self.mosaic['keywords'].items():
-                #print('Update keyword %s = '%(key), value)
-                h[key] = value
+            if 'keywords' in  self.mosaic.keys():
+                for key, value in self.mosaic['keywords'].items():
+                    #print('Update keyword %s = '%(key), value)
+                    h[key] = value
             mp = np.zeros((ni, nj))
             mp[:,:] = np.nan 
             mp[m_i, m_j] = self.mosaic[k][px]
