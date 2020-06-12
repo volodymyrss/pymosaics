@@ -1,13 +1,14 @@
 language: python
 python:
-  - "3.5"
-  - "3.6"      # current default Python on Travis CI
+  - "3.6"  
   - "3.7"
   - "3.8"
 install:
-  - pip install pytest mypy pylint
+  - pip install pytest mypy pylint pytest-cov codecov
   - pip install -e '.[testing]'
 script:
   - mypy mosaic
   - pylint -E mosaic
-  - pytest
+  - pytest --cov=./
+after_success:
+  - codecov

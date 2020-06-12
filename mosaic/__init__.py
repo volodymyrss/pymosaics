@@ -10,6 +10,12 @@ import healpy # type: ignore
 
 import numpy as np # type: ignore
 
+import logging
+
+logging.basicConfig()
+
+logger = logging.getLogger()
+
 debug = False
 
 def mosaic_list(in_fs: List[Union[str, fits.HDUList]], 
@@ -17,7 +23,7 @@ def mosaic_list(in_fs: List[Union[str, fits.HDUList]],
                 pixels="healpix", 
                 healpix_nsides=512, 
                 mock=False):
-    # print("input: %s output: %s"%( ", ".join(map(str, in_fs)), out_fn))
+    logger.debug("input: %s output: %s", ", ".join(map(str, in_fs)), out_fn)
 
     if pixels == "first":
         m = FITsMosaic(mock) # type: Mosaic
@@ -68,7 +74,7 @@ class Mosaic:
 
     def parse_in(self, in_f):
         if isinstance(in_f, str):
-            #print("parsing", in_f)
+            logger.debug("parsing %s", in_f)
             fn = in_f
             f = fits.open(in_f)
 
@@ -76,10 +82,10 @@ class Mosaic:
             f = in_f
             try:
                 fn = in_f.filename()
-                #print("parsing hdulist", fn)
+                logger.debug("parsing hdulist %s", fn)
             except Exception as e:
                 fn = "unknown"
-                #print("parsing hdulist with no detectable filename?")
+                logger.debug("parsing hdulist with no detectable filename?")
 
         else:
             raise RuntimeError("unknown input " +repr(f))
@@ -90,11 +96,11 @@ class Mosaic:
         for n, img_parser in img_parsers.items():
             try:
                 img = img_parser(f)
-                #print("img parser succeeded", n)
+                logger.debug("img parser succeeded %s", n)
                 break
             except Exception as e:
-                print("img parser failed", n, e)
-                failures.append("img parser failed %s %s"%(n, e))
+                logger.info("img parser failed %s %s", n, e)
+                failures.append("img parser failed %s %s", n, e)
 
         if img is None:
             raise RuntimeError("all image parsers failed for %s: %s"%(f, ", ".join(failures)))
@@ -107,7 +113,7 @@ class Mosaic:
                 sj, si = map(int, img['wcs'].wcs_world2pix(83, 22, 0))
                 sjd, sid = map(int, img['wcs'].wcs_world2pix(83, 24, 0))
 
-                print("mock crab at", si, sj, "and", sid, sjd)
+                logger.info("mock crab at %s %s and %s %s", si, sj, sid, sjd)
 
                 img['flux'][
                         si-4:si+4,
@@ -118,7 +124,7 @@ class Mosaic:
                         sjd-4:sjd+4,
                         ] = 60
             except Exception as e:
-                print("unable to add mock crab", e)
+                logger.info("unable to add mock crab %s", e)
 
 
             img['flux'][
@@ -176,8 +182,8 @@ class Mosaic:
                 for keyword in kk[0]:
                     try:
                         keywords.update({keyword: kk[1](a['header'][keyword], b['header'][keyword])})
-                    except:
-                        Warning('Keyword ' + keyword + ' not found')
+                    except KeyError as e:
+                        logger.warning(f'Keyword %s not found: %s', keyword, e)
 
             return keywords
 
@@ -187,17 +193,17 @@ class Mosaic:
         
         c = dict()
 
-        #print("m: _m shape", _m.shape)
-        #print("m: _m_a shape", _m_a.shape)
-        #print("m: _m_b shape", _m_b.shape)
+        logger.debug("m: _m shape %s", _m.shape)
+        logger.debug("m: _m_a shape %s", _m_a.shape)
+        logger.debug("m: _m_b shape %s", _m_b.shape)
 
         for k in 'flux', 'var', 'ex', 'n':
             c[k] = _s_a(a[k])
             c[k][~_m_a & _m_b] = _s_b(b[k])[~_m_a & _m_b]
 
 
-        #print("max exposure was", np.nanmax(a['ex']))
-        #print("max exposure to add", np.nanmax(b['ex']))
+        logger.debug("max exposure was %s", np.nanmax(a['ex']))
+        logger.debug("max exposure to add %s", np.nanmax(b['ex']))
 
         s_a = lambda x:_s_a(x)[_m]
         s_b = lambda x:_s_b(x)[_m]
@@ -210,7 +216,7 @@ class Mosaic:
         c['n'][_m] = s_a(a['n']) + s_b(b['n'])
         c['keywords'] = update_keywords()
 
-        #print("max exposure become", np.nanmax(c['ex']))
+        logger.debug("max exposure become %s", np.nanmax(c['ex']))
 
         return c
 
@@ -259,10 +265,10 @@ class FITsMosaic(Mosaic):
         img = self.parse_in(in_f)
 
         if self.mosaic is None: 
-            print("first mosaic")
+            logger.info("first mosaic")
             self.mosaic = img
         else:
-            print("adding mosaic")
+            logger.info("adding mosaic")
             m_j, m_i = np.meshgrid(
                     np.arange(self.mosaic['flux'].shape[1]),
                     np.arange(self.mosaic['flux'].shape[0]),
@@ -273,8 +279,8 @@ class FITsMosaic(Mosaic):
             i = i.astype(int)
             j = j.astype(int)
 
-            #print("MOSAIC:", self.mosaic['wcs'])
-            #print("IMG:", img['wcs'])
+            logger.debug("MOSAIC: %s", self.mosaic['wcs'])
+            logger.debug("IMG: %s", img['wcs'])
 
 
             self.mosaic.update(self.m(
@@ -291,7 +297,7 @@ class FITsMosaic(Mosaic):
 
         for k in self.mosaic:
 
-            #print(k)
+            logger.debug(k)
 
             if k == 'wcs' or k == 'keywords' or k == 'header':
                 continue
@@ -307,7 +313,7 @@ class FITsMosaic(Mosaic):
             h['IMATYPE'] = h['EXTNAME']
             if 'keywords' in self.mosaic.keys():
                 for key, value in self.mosaic['keywords'].items():
-                    #print('Update keyword %s = '%(key), value)
+                    logger.debug('Update keyword %s = %s', key, value)
                     h[key] = value
             e = fits.ImageHDU(self.mosaic[k], header=h)
 
@@ -378,14 +384,14 @@ class HealpixMosaic(Mosaic):
 
         ra, dec = self.radec_grid()
 
-        #print("max exposure", np.nanmax(self.mosaic['ex']))
+        logger.debug("max exposure %s", np.nanmax(self.mosaic['ex']))
 
         m_best = self.mosaic['ex'] > (np.nanmax(self.mosaic['ex'])/2.)
         c_ra = np.nanmean(ra[m_best])
         c_dec = np.nanmean(dec[m_best])
         c_rad_deg = 60
 
-        #print("center ra, dec", c_ra, c_dec)
+        logger.debug("center ra, dec %s %s", c_ra, c_dec)
 
         w = pywcs.WCS(naxis=2)
         ni, nj = 800, 800
@@ -426,7 +432,7 @@ class HealpixMosaic(Mosaic):
             h['IMATYPE'] = h['EXTNAME']
             if 'keywords' in  self.mosaic.keys():
                 for key, value in self.mosaic['keywords'].items():
-                    #print('Update keyword %s = '%(key), value)
+                    logger.debug('Update keyword %s = %s',key, value)
                     h[key] = value
             mp = np.zeros((ni, nj))
             mp[:,:] = np.nan 
