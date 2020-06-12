@@ -3,6 +3,8 @@
 [![PyPI version](https://badge.fury.io/py/pymosaic-fits.svg)](https://badge.fury.io/py/pymosaic-fits)
 [![Build Status](https://travis-ci.org/volodymyrss/pymosaics.svg?branch=master)](https://travis-ci.org/volodymyrss/pymosaics)
 [![codecov](https://codecov.io/gh/volodymyrss/pymosaics/branch/master/graph/badge.svg)](https://codecov.io/gh/volodymyrss/pymosaics)
+HTML
+[![Total alerts](https://img.shields.io/lgtm/alerts/g/volodymyrss/pymosaics.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/volodymyrss/pymosaics/alerts/)
 
 
 
