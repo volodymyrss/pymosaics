@@ -2,6 +2,9 @@
 
 [![PyPI version](https://badge.fury.io/py/pymosaic-fits.svg)](https://badge.fury.io/py/pymosaic-fits)
 [![Build Status](https://travis-ci.org/volodymyrss/pymosaics.svg?branch=master)](https://travis-ci.org/volodymyrss/pymosaics)
+[![codecov](https://codecov.io/gh/volodymyrss/pymosaics/branch/master/graph/badge.svg)](https://codecov.io/gh/volodymyrss/pymosaics)
+
+
 
 __CAUTION__: *this is a simple functional project, although it should work as generally expected, do make sanity checks and make sure you understand what the mosaic does - as usual. In particular, the re-pixelization approach (mapping/interpolation) is suitable for maps with flux density, as long as the pixels are smaller than PSF*
 
