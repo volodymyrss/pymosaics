@@ -176,8 +176,8 @@ class Mosaic:
                 for keyword in kk[0]:
                     try:
                         keywords.update({keyword: kk[1](a['header'][keyword], b['header'][keyword])})
-                    except:
-                        Warning('Keyword ' + keyword + ' not found')
+                    except Exception as e:
+                        raise Warning('Keyword ' + keyword + ' not found: '+repr(e))
 
             return keywords
 
