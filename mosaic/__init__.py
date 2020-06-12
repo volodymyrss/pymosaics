@@ -88,7 +88,7 @@ class Mosaic:
                 logger.debug("parsing hdulist with no detectable filename?")
 
         else:
-            raise RuntimeError("unknown input " +repr(f))
+            raise RuntimeError("unknown input " + repr(in_f))
 
 
         img = None
