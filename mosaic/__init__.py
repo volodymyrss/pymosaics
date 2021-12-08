@@ -141,7 +141,7 @@ class Mosaic:
 
     @staticmethod
     def m_s(a, _s_a, b, _s_b):
-        c=dict()
+        c = dict()
 
         _m = ~np.isnan(_s_b(a['flux']))
 
@@ -182,6 +182,8 @@ class Mosaic:
                 for keyword in kk[0]:
                     try:
                         keywords.update({keyword: kk[1](a['header'][keyword], b['header'][keyword])})
+                        logger.debug('%s %s %s %s' % (keyword, str(a['header'][keyword]), str(b['header'][keyword]),
+                                                      keywords[keyword]))
                     except KeyError as e:
                         logger.warning(f'Keyword %s not found: %s', keyword, e)
 
@@ -200,7 +202,6 @@ class Mosaic:
         for k in 'flux', 'var', 'ex', 'n':
             c[k] = _s_a(a[k])
             c[k][~_m_a & _m_b] = _s_b(b[k])[~_m_a & _m_b]
-
 
         logger.debug("max exposure was %s", np.nanmax(a['ex']))
         logger.debug("max exposure to add %s", np.nanmax(b['ex']))
@@ -289,6 +290,13 @@ class FITsMosaic(Mosaic):
                         img,
                         lambda x:pickornan(x, i, j),
                     ))
+            #we need to update the keywords because update is done in a static method
+            #that does not know about the keyword dictionary
+            if 'keywords' in self.mosaic.keys():
+                logger.debug('Updating keywords')
+                for kk, vv in self.mosaic['keywords'].items():
+                    self.mosaic['header'][kk] = vv
+
 
     def to_hdu_list(self):
         self.mosaic['sig'] = self.mosaic['flux'] / self.mosaic['var'] ** 0.5
@@ -315,6 +323,7 @@ class FITsMosaic(Mosaic):
                 for key, value in self.mosaic['keywords'].items():
                     logger.debug('Update keyword %s = %s', key, value)
                     h[key] = value
+                h['TELAPSE'] = h['TLAST'] - h['TFIRST']
             e = fits.ImageHDU(self.mosaic[k], header=h)
 
             el.append(e)
