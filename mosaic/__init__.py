@@ -323,7 +323,7 @@ class FITsMosaic(Mosaic):
                 for key, value in self.mosaic['keywords'].items():
                     logger.debug('Update keyword %s = %s', key, value)
                     h[key] = value
-                h['TELAPSE'] = h['TLAST'] - h['TFIRST']
+                h['TELAPSE'] = (h['TLAST'] - h['TFIRST']) * 24 * 3600
             e = fits.ImageHDU(self.mosaic[k], header=h)
 
             el.append(e)
@@ -333,6 +333,7 @@ class FITsMosaic(Mosaic):
 
     def writeto(self, fn):
         self.to_hdu_list().writeto(fn, overwrite=True)
+
 
 
 class HealpixMosaic(Mosaic):
@@ -412,6 +413,8 @@ class HealpixMosaic(Mosaic):
         w.wcs.cunit = 'deg', 'deg'
         w.wcs.cdelt = np.array([-pxsize, pxsize])
         w.wcs.ctype = ["RA---TAN", "DEC--TAN"]
+
+        #TODO: is this needed
         #w.wcs.set_pv([(2, 1, 45.0)])
 
         m_j, m_i = np.meshgrid(
@@ -423,8 +426,8 @@ class HealpixMosaic(Mosaic):
 
         px = healpy.ang2pix(self.nsides, m_ra, m_dec, lonlat=True)
 
-
         self.mosaic['sig'] = self.mosaic['flux'] / self.mosaic['var']**0.5
+
         el = []
         for k in self.mosaic:
             if k == 'wcs' or k == 'keywords' or k == 'header':
@@ -438,11 +441,13 @@ class HealpixMosaic(Mosaic):
                         ex='EXPOSURE',
                         n='NIMAGE',
                     )[k]
+
             h['IMATYPE'] = h['EXTNAME']
             if 'keywords' in  self.mosaic.keys():
                 for key, value in self.mosaic['keywords'].items():
                     logger.debug('Update keyword %s = %s',key, value)
                     h[key] = value
+
             mp = np.zeros((ni, nj))
             mp[:,:] = np.nan 
             mp[m_i, m_j] = self.mosaic[k][px]
@@ -450,6 +455,7 @@ class HealpixMosaic(Mosaic):
             e = fits.ImageHDU(mp, header=h)
 
             el.append(e)
+
         return fits.HDUList([fits.PrimaryHDU()] + el)
 
     def writeto_reproj(self, fn):

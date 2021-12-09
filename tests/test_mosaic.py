@@ -95,6 +95,14 @@ def test_first_mosaima_header():
     sum_ontime = out_header.to_hdu_list()[2].header['ONTIME']
 
     out_header.writeto(out_fn)
+    m = fits.open(out_fn)
+
     import os
     assert os.path.exists(out_fn)
     assert numpy.abs(sum_ontime - ontime1 - ontime2) < 0.01
+
+    assert max(h1[2].header['TFIRST'], h2[2].header['TFIRST']) <= m[2].header['TFIRST']
+    assert max(h1[2].header['TLAST'], h2[2].header['TLAST']) <= m[2].header['TLAST']
+
+    assert max(h1[2].header['TELAPSE'], h2[2].header['TELAPSE']) <= m[2].header['TELAPSE']
+    #TODO: test more kw
