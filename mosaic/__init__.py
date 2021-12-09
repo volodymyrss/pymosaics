@@ -1,5 +1,6 @@
 import click
 
+from copy import deepcopy
 from typing import List, Union
 
 from astropy import wcs as pywcs # type: ignore
@@ -23,6 +24,7 @@ def mosaic_list(in_fs: List[Union[str, fits.HDUList]],
                 pixels="healpix", 
                 healpix_nsides=512, 
                 mock=False):
+
     logger.debug("input: %s output: %s", ", ".join(map(str, in_fs)), out_fn)
 
     if pixels == "first":
@@ -88,7 +90,7 @@ class Mosaic:
                 logger.debug("parsing hdulist with no detectable filename?")
 
         else:
-            raise RuntimeError("unknown input " +repr(f))
+            raise RuntimeError("unknown input " + repr(in_f))
 
 
         img = None
@@ -131,17 +133,19 @@ class Mosaic:
                     (int(img['flux'].shape[0]/2)-10):(int(img['flux'].shape[0]/2)+10),
                     (int(img['flux'].shape[1]/2)-10):(int(img['flux'].shape[1]/2)+10),
                     ] = 10
+
             img['flux'][
                     (int(img['flux'].shape[0]/2)-3):(int(img['flux'].shape[0]/2)+3),
                     (int(img['flux'].shape[1]/2)):(int(img['flux'].shape[1]/2)+30),
                     ] = 20
+
             fits.ImageHDU(img['flux'], header=img['wcs'].to_header()).writeto("mock-%s.fits"%fn.replace("/","_"), overwrite=True)
 
         return img
 
     @staticmethod
     def m_s(a, _s_a, b, _s_b):
-        c=dict()
+        c = dict()
 
         _m = ~np.isnan(_s_b(a['flux']))
 
@@ -165,25 +169,37 @@ class Mosaic:
     def m(a, _s_a, b, _s_b):
 
         def update_keywords():
+            # defined according to
+            # https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/ofwg_recomm/r11.html
+            # https://heasarc.gsfc.nasa.gov/docs/fcg/common_dict.html
 
-            additive_kw = ['ONTIME', 'EXPOSURE', 'TELAPSE']
+            additive_kw = ['ONTIME', 'EXPOSURE']
             incremental_kw_min = ['TSTART', 'DATE-OBS', 'TFIRST', 'DATE', 'MJD-OBS']
             incremental_kw_max = ['TSTOP', 'DATE-END', 'TLAST', 'MJD-END']
             average_kw = ['DEADC']
 
             keyword_list = [(additive_kw, lambda x, y: x + y),
                             (average_kw, lambda x, y: (x + y) / 2),
-                            (incremental_kw_min, lambda x, y: (x if x <= y else y)),
-                            (incremental_kw_max, lambda x, y: (x if x >= y else y))]
+                            (incremental_kw_min, lambda x, y: min(x, y)),
+                            (incremental_kw_max, lambda x, y: max(x, y))]
 
             keywords = dict()
 
-            for kk in keyword_list:
-                for keyword in kk[0]:
+            for kws, keyword_aggregator in keyword_list:
+                for keyword in kws:
                     try:
-                        keywords.update({keyword: kk[1](a['header'][keyword], b['header'][keyword])})
+                        keywords.update({
+                            keyword: keyword_aggregator(a['header'][keyword], b['header'][keyword])
+                        })
+                        logger.debug('%s (%s, %s) => %s', keyword, 
+                                                    str(a['header'][keyword]), 
+                                                    str(b['header'][keyword]),
+                                                    keywords[keyword])
                     except KeyError as e:
                         logger.warning(f'Keyword %s not found: %s', keyword, e)
+
+            if 'TSTART' in keywords and 'TSTOP' in keywords:
+                keywords['TELAPSE'] = keywords['TSTART'] - keywords['TSTOP']
 
             return keywords
 
@@ -200,7 +216,6 @@ class Mosaic:
         for k in 'flux', 'var', 'ex', 'n':
             c[k] = _s_a(a[k])
             c[k][~_m_a & _m_b] = _s_b(b[k])[~_m_a & _m_b]
-
 
         logger.debug("max exposure was %s", np.nanmax(a['ex']))
         logger.debug("max exposure to add %s", np.nanmax(b['ex']))
@@ -289,6 +304,13 @@ class FITsMosaic(Mosaic):
                         img,
                         lambda x:pickornan(x, i, j),
                     ))
+            #we need to update the keywords because update is done in a static method
+            #that does not know about the keyword dictionary
+            if 'keywords' in self.mosaic.keys():
+                logger.debug('Updating keywords')
+                for kk, vv in self.mosaic['keywords'].items():
+                    self.mosaic['header'][kk] = vv
+
 
     def to_hdu_list(self):
         self.mosaic['sig'] = self.mosaic['flux'] / self.mosaic['var'] ** 0.5
@@ -315,6 +337,7 @@ class FITsMosaic(Mosaic):
                 for key, value in self.mosaic['keywords'].items():
                     logger.debug('Update keyword %s = %s', key, value)
                     h[key] = value
+                h['TELAPSE'] = (h['TLAST'] - h['TFIRST']) * 24 * 3600
             e = fits.ImageHDU(self.mosaic[k], header=h)
 
             el.append(e)
@@ -324,6 +347,7 @@ class FITsMosaic(Mosaic):
 
     def writeto(self, fn):
         self.to_hdu_list().writeto(fn, overwrite=True)
+
 
 
 class HealpixMosaic(Mosaic):
@@ -403,6 +427,8 @@ class HealpixMosaic(Mosaic):
         w.wcs.cunit = 'deg', 'deg'
         w.wcs.cdelt = np.array([-pxsize, pxsize])
         w.wcs.ctype = ["RA---TAN", "DEC--TAN"]
+
+        #TODO: is this needed
         #w.wcs.set_pv([(2, 1, 45.0)])
 
         m_j, m_i = np.meshgrid(
@@ -414,8 +440,8 @@ class HealpixMosaic(Mosaic):
 
         px = healpy.ang2pix(self.nsides, m_ra, m_dec, lonlat=True)
 
-
         self.mosaic['sig'] = self.mosaic['flux'] / self.mosaic['var']**0.5
+
         el = []
         for k in self.mosaic:
             if k == 'wcs' or k == 'keywords' or k == 'header':
@@ -429,11 +455,13 @@ class HealpixMosaic(Mosaic):
                         ex='EXPOSURE',
                         n='NIMAGE',
                     )[k]
+
             h['IMATYPE'] = h['EXTNAME']
             if 'keywords' in  self.mosaic.keys():
                 for key, value in self.mosaic['keywords'].items():
                     logger.debug('Update keyword %s = %s',key, value)
                     h[key] = value
+
             mp = np.zeros((ni, nj))
             mp[:,:] = np.nan 
             mp[m_i, m_j] = self.mosaic[k][px]
@@ -441,6 +469,7 @@ class HealpixMosaic(Mosaic):
             e = fits.ImageHDU(mp, header=h)
 
             el.append(e)
+
         return fits.HDUList([fits.PrimaryHDU()] + el)
 
     def writeto_reproj(self, fn):
