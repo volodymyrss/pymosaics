@@ -39,3 +39,9 @@ $ mosaic tests/data/isgri_sky_ima_{1,2}.fits.gz out.fits --pixels healpix # heal
 import mosaic                                                            
 mosaic.mosaic_fn_list(["tests/data/isgri_sky_ima_1.fits.gz", "tests/data/isgri_sky_ima_2.fits.gz"], "out.fits")
 ```
+
+## Additional mosaic analysis 
+
+Using https://github.com/astromatic/sextractor/ we provide some analysis, suitable for example for INTEGRAL ISGRI and JEMX mosaics:
+
+![image](https://user-images.githubusercontent.com/3909535/145425580-ee459651-dd81-448d-bc44-5af3462b5013.png)
