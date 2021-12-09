@@ -13,11 +13,11 @@ __CAUTION__: *this is a simple functional project, although it should work as ge
 Merge FITS file mosaic
 
 * maps all images in the same pixels (taken from one of the images, or healpix)
-* sums with a flexible alhorithm
+* sums with a flexible algorithm
 
 * output mosaics format is compatible with input - allowing map-reduce operations
 
-  note that pixilization used for mosaic and for the output is not neccessarily the same, i.e. for healpix it's useful to have "regular" projection output.
+  note that pixelization used for mosaic and for the output is not necessarily the same, i.e. for healpix it's useful to have "regular" projection output.
 
   clearly, heapix pixels are  useful primarily for all-sky.
 

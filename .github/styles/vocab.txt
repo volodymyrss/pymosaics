@@ -1,0 +1,12 @@
+cdci
+oda
+api
+Tramacere
+Volodymyr
+Savchenko
+conda
+chemin
+versoix
+pymosaics
+codecov
+healpix
