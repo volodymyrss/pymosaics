@@ -1,12 +1,17 @@
+#pyli
+
 #!/bin/env python
 
 import astropy.io.fits as fits
 import numpy as np
+import pandas as pd
 import subprocess
 import os, re
 
 from astropy import wcs
 from scipy.optimize import curve_fit
+
+import matplotlib.pylab as plt
 
 # Our goal in this image analysis is to estimate sensitivity in the whole mosaic 
 # We also find sources and estimate background component
@@ -71,7 +76,7 @@ def fitgaussian(data):
 
 
 class SExtractor:
-    back_size = 30
+    back_size = 4
     threshold = 3
 
     def __init__(self, hostdir=None):
@@ -94,13 +99,20 @@ class SExtractor:
 
     def _run(self):
         config = open(sextractor_share + "/default.sex").read()
-        open("default.param", "w").write(
-                                        "X_IMAGE\n"
-                                        "Y_IMAGE\n"
-                                        "MAG_BEST\n")
+        open("default.param", "w").write("\n".join([
+                                        "X_IMAGE",
+                                        "Y_IMAGE",
+                                        "MAG_BEST",
+                                        "ALPHA_SKY",
+                                        "DELTA_SKY",
+                                        "FLUX_ISO"]))
 
-        conv = open(sextractor_share + "/default.conv").read()
-        open("default.conv", "w").write(conv)
+        #conv = open(sextractor_share + "/default.conv").read()
+        open("default.conv", "w").write(
+            "CONV NORM\n"
+            "0 0 0\n"
+            "0 1 0\n"
+            "0 0 0\n")
         
 
         def set_key(config, key, value):
@@ -119,6 +131,7 @@ class SExtractor:
         config = set_key(config, "CHECKIMAGE_TYPE", " ".join(list(zip(*check_images))[0]))
         config = set_key(config, "CHECKIMAGE_NAME", " ".join(list(zip(*check_images))[1]))
         config = set_key(config, "BACK_SIZE", str(self.back_size))
+        config = set_key(config, "BACK_FILTERSIZE", "1")
         config = set_key(config, "DETECT_THRESH", str(self.threshold))
         config = set_key(config, "ANALYSIS_THRESH", str(self.threshold))
         open("default.sex", "w").write(config)
@@ -642,6 +655,11 @@ image
         )
         open("source.reg", "w").write(regionfile)
         open("source_extra.reg", "w").write(regionfile_extra)
+
+        self.source_results = pd.DataFrame(data=results,
+            columns=['x', 'y', 'ra', 'dec', 'peakcounts', 'rms', 'expo'])
+
+        self.source_results.to_csv('source_results.csv')
 
         savetxt("source_results.txt", array(results))
         savetxt("source_results_extra.txt", array(results_extra))
