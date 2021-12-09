@@ -2,7 +2,7 @@
 
 import astropy.io.fits as fits
 import numpy as np
-import sys
+import subprocess
 import os, re
 
 from astropy import wcs
@@ -13,15 +13,18 @@ from scipy.optimize import curve_fit
 # see examples on https://apc.u-paris.fr/Downloads/astrog/savchenk/imgb/ISGRI_deep.html
 
 # TODO: find the config
-sextractor_share = ".../sextractor/x86_64/share/config"
+sextractor_share = "/usr/local/share/sextractor"
 
-def render():
-    pass
+def render(*args):
+    print(*args)
 
 ## 2d gaussian
 
+# todo not
 from numpy import *
 from scipy import optimize
+
+# import crab
 
 
 def gaussian(height, center_x, center_y, width_x, width_y):
@@ -73,14 +76,32 @@ class SExtractor:
 
     def __init__(self, hostdir=None):
         self.hostdir = hostdir
+        os.makedirs(hostdir, exist_ok=True)
 
     def set_mosaic(self, fn):
         self.mosaic_fn = fn
 
     def run(self):
+        cwd = os.getcwd()
+        os.chdir(self.hostdir)
+        try:
+            self._run()
+            os.chdir(cwd)
+        except:
+            os.chdir(cwd)
+            raise
+            
+
+    def _run(self):
         config = open(sextractor_share + "/default.sex").read()
-        oparam = open(sextractor_share + "/daofind.param").read()
-        open("daofind.param", "w").write(oparam)
+        open("default.param", "w").write(
+                                        "X_IMAGE\n"
+                                        "Y_IMAGE\n"
+                                        "MAG_BEST\n")
+
+        conv = open(sextractor_share + "/default.conv").read()
+        open("default.conv", "w").write(conv)
+        
 
         def set_key(config, key, value):
             return re.sub("(?<=" + key + "[ \t])(.*?)(?=\n)", value + " #", config)
@@ -95,13 +116,15 @@ class SExtractor:
             ("SEGMENTATION", "segmentation.fits"),
         ]
 
-        config = set_key(config, "CHECKIMAGE_TYPE", " ".join(zip(*check_images)[0]))
-        config = set_key(config, "CHECKIMAGE_NAME", " ".join(zip(*check_images)[1]))
+        config = set_key(config, "CHECKIMAGE_TYPE", " ".join(list(zip(*check_images))[0]))
+        config = set_key(config, "CHECKIMAGE_NAME", " ".join(list(zip(*check_images))[1]))
         config = set_key(config, "BACK_SIZE", str(self.back_size))
         config = set_key(config, "DETECT_THRESH", str(self.threshold))
         config = set_key(config, "ANALYSIS_THRESH", str(self.threshold))
         open("default.sex", "w").write(config)
-        os.system("sex ../" + self.mosaic_fn)
+
+        # find binary
+        subprocess.check_call(["sextractor",  "../" + self.mosaic_fn])
 
     def background_rms_ext(self):
         return fits.open(self.hostdir + "/background_rms.fits")[0]
@@ -226,7 +249,7 @@ class DistributionAnalysis:
 
 class ImageAnalysis:
     back_size = 30
-    exposure_fraction_cut = 2
+    exposure_fraction_cut = 100
     threshold = 4
 
     cached = True
@@ -307,13 +330,17 @@ class ImageAnalysis:
 
         e1, e2 = self.erange(0)
 
-        sensi = crab.Crab().to_mcrab(rms, e1, e2)
+        # sensi = crab.Crab().to_mcrab(rms, e1, e2)
+        sensi = rms
 
-        crab_here = crab.Crab().counts_in(e1, e2)
-        cts2ecs = lambda x: crab.Crab().to_ecs(x, e1, e2)
-        cts2mcrab = lambda x: crab.Crab().to_mcrab(x, e1, e2)
-        mcrab2ecs = lambda x: cts2ecs(x * crab_here / 1000.0)
-        print("Crab is:", crab_here, "cts", cts2ecs(crab_here), "ecs in", e1, e2)
+        # crab_here = crab.Crab().counts_in(e1, e2)
+        # cts2ecs = lambda x: crab.Crab().to_ecs(x, e1, e2)
+        # cts2mcrab = lambda x: crab.Crab().to_mcrab(x, e1, e2)
+        # mcrab2ecs = lambda x: cts2ecs(x * crab_here / 1000.0)
+        # print("Crab is:", crab_here, "cts", cts2ecs(crab_here), "ecs in", e1, e2)
+        cts2ecs = lambda x:x
+        cts2mcrab = lambda x:x
+        mcrab2ecs = lambda x:x
 
         print(render("{RED}enery band{/}"), e1, e2)
         print(
@@ -432,7 +459,7 @@ class ImageAnalysis:
         for s in self.statistics:
             f.write(" ".join(["%.5lg" % s[k] for k in keys]) + "\n")
         f.close()
-        self.statfile = da.DataFile(fn)
+        # self.statfile = da.DataFile(fn)
 
     def save_as_fits(self, data, fn):
         h = fits.PrimaryHDU(data)
@@ -819,7 +846,7 @@ class SimpleImageAnalysis:
         for s in self.statistics:
             f.write(" ".join(["%.5lg" % s[k] for k in keys]) + "\n")
         f.close()
-        self.statfile = da.DataFile(fn)
+        # self.statfile = da.DataFile(fn)
 
     def raw_wcs(self):
         return wcs.WCS(self.raw_exposure_ext().header)
@@ -875,7 +902,7 @@ class OSAMosaicImageAnalysis(ImageAnalysis):
         gt = fits.open(self.get_raw_mosaic_fn())
         print("group:", gt)
         print("found bands:", (len(gt) - 2) / 4)
-        return (len(gt) - 2) / 4
+        return int((len(gt) - 2) / 4)
 
     def set_raw_mosaic_fn(self, fn):
         self.raw_mosaic_fn = fn
