@@ -198,7 +198,8 @@ class Mosaic:
                     except KeyError as e:
                         logger.warning(f'Keyword %s not found: %s', keyword, e)
 
-            keywords['TELAPSE'] = keywords['TSTART'] - keywords['TSTOP']
+            if 'TSTART' in keywords and 'TSTOP' in keywords:
+                keywords['TELAPSE'] = keywords['TSTART'] - keywords['TSTOP']
 
             return keywords
 
