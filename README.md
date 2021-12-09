@@ -19,7 +19,7 @@ Merge FITS file mosaic
 
   note that pixelization used for mosaic and for the output is not necessarily the same, i.e. for healpix it's useful to have "regular" projection output.
 
-  clearly, heapix pixels are  useful primarily for all-sky.
+  clearly, healpix pixels are  useful primarily for all-sky.
 
 ## Installation
 

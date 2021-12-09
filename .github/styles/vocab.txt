@@ -10,3 +10,4 @@ versoix
 pymosaics
 codecov
 healpix
+pixelization
