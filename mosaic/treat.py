@@ -12,6 +12,7 @@ from scipy.optimize import curve_fit
 # We also find sources and estimate background component
 # see examples on https://apc.u-paris.fr/Downloads/astrog/savchenk/imgb/ISGRI_deep.html
 
+# TODO: find the config
 sextractor_share = ".../sextractor/x86_64/share/config"
 
 def render():
