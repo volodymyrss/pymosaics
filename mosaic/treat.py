@@ -8,6 +8,10 @@ import os, re
 from astropy import wcs
 from scipy.optimize import curve_fit
 
+# Our goal in this image analysis is to estimate sensitivity in the whole mosaic 
+# We also find sources and estimate background component
+# see examples on https://apc.u-paris.fr/Downloads/astrog/savchenk/imgb/ISGRI_deep.html
+
 sextractor_share = ".../sextractor/x86_64/share/config"
 
 def render():
