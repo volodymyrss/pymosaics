@@ -1,5 +1,6 @@
 import click
 
+from copy import deepcopy
 from typing import List, Union
 
 from astropy import wcs as pywcs # type: ignore
@@ -23,6 +24,7 @@ def mosaic_list(in_fs: List[Union[str, fits.HDUList]],
                 pixels="healpix", 
                 healpix_nsides=512, 
                 mock=False):
+
     logger.debug("input: %s output: %s", ", ".join(map(str, in_fs)), out_fn)
 
     if pixels == "first":
@@ -131,10 +133,12 @@ class Mosaic:
                     (int(img['flux'].shape[0]/2)-10):(int(img['flux'].shape[0]/2)+10),
                     (int(img['flux'].shape[1]/2)-10):(int(img['flux'].shape[1]/2)+10),
                     ] = 10
+
             img['flux'][
                     (int(img['flux'].shape[0]/2)-3):(int(img['flux'].shape[0]/2)+3),
                     (int(img['flux'].shape[1]/2)):(int(img['flux'].shape[1]/2)+30),
                     ] = 20
+
             fits.ImageHDU(img['flux'], header=img['wcs'].to_header()).writeto("mock-%s.fits"%fn.replace("/","_"), overwrite=True)
 
         return img
@@ -165,27 +169,36 @@ class Mosaic:
     def m(a, _s_a, b, _s_b):
 
         def update_keywords():
+            # defined according to
+            # https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/ofwg_recomm/r11.html
+            # https://heasarc.gsfc.nasa.gov/docs/fcg/common_dict.html
 
-            additive_kw = ['ONTIME', 'EXPOSURE', 'TELAPSE']
+            additive_kw = ['ONTIME', 'EXPOSURE']
             incremental_kw_min = ['TSTART', 'DATE-OBS', 'TFIRST', 'DATE', 'MJD-OBS']
             incremental_kw_max = ['TSTOP', 'DATE-END', 'TLAST', 'MJD-END']
             average_kw = ['DEADC']
 
             keyword_list = [(additive_kw, lambda x, y: x + y),
                             (average_kw, lambda x, y: (x + y) / 2),
-                            (incremental_kw_min, lambda x, y: (x if x <= y else y)),
-                            (incremental_kw_max, lambda x, y: (x if x >= y else y))]
+                            (incremental_kw_min, lambda x, y: min(x, y)),
+                            (incremental_kw_max, lambda x, y: max(x, y))]
 
             keywords = dict()
 
-            for kk in keyword_list:
-                for keyword in kk[0]:
+            for kws, keyword_aggregator in keyword_list:
+                for keyword in kws:
                     try:
-                        keywords.update({keyword: kk[1](a['header'][keyword], b['header'][keyword])})
-                        logger.debug('%s %s %s %s' % (keyword, str(a['header'][keyword]), str(b['header'][keyword]),
-                                                      keywords[keyword]))
+                        keywords.update({
+                            keyword: keyword_aggregator(a['header'][keyword], b['header'][keyword])
+                        })
+                        logger.debug('%s (%s, %s) => %s', keyword, 
+                                                    str(a['header'][keyword]), 
+                                                    str(b['header'][keyword]),
+                                                    keywords[keyword])
                     except KeyError as e:
                         logger.warning(f'Keyword %s not found: %s', keyword, e)
+
+            keywords['TELAPSE'] = keywords['TSTART'] - keywords['TSTOP']
 
             return keywords
 
