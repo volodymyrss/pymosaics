@@ -137,7 +137,7 @@ class SExtractor:
         open("default.sex", "w").write(config)
 
         # find binary
-        subprocess.check_call(["sextractor",  "../" + self.mosaic_fn])
+        subprocess.check_call(["sex",  "../" + self.mosaic_fn])
 
     def background_rms_ext(self):
         return fits.open(self.hostdir + "/background_rms.fits")[0]
@@ -262,7 +262,9 @@ class DistributionAnalysis:
 
 class ImageAnalysis:
     back_size = 30
+
     exposure_fraction_cut = 100
+
     threshold = 4
 
     cached = True
@@ -273,8 +275,82 @@ class ImageAnalysis:
 
     version = "v1"
 
+    i_band = 0
+
     def fullpath(self, x):
         return x
+
+    def raw_erange(self):
+        h = self.raw_intensity_ext().header
+        if 'E_MIN' in h.keys() and "E_MAX" in h.keys():
+            return h["E_MIN"], h["E_MAX"]
+        else:
+            return -1, -1
+
+    def set_mosaic_fn(self, fn):
+        self.raw_mosaic_fn = fn
+
+    def get_mosaic_fn(self):
+        if hasattr(self, "input_image"):
+            if hasattr(self.input_image, "skyima"):
+                return self.input_image.skyima.get_path()
+
+        return self.raw_mosaic_fn
+
+    def e_range(self):
+        return self.raw_erange()
+
+    def get_n_ebands(self):
+        return self.get_total_ebands()
+
+    def get_total_ebands(self):
+        gt = fits.open(self.get_mosaic_fn())
+        # print("group:", gt)
+        # print(len(gt))
+        # print("found bands:", (len(gt) - 1) / 4)
+        return int((len(gt) - 1) / 4)
+
+    def get_imatype(self, myhead):
+        extname=''
+        imatype=''
+        if 'EXTNAME' in myhead.keys():
+            extname = myhead['EXTNAME']
+        if 'IMATYPE' in myhead.keys():
+            imatype = myhead['IMATYPE']
+
+        if imatype != '':
+            return imatype
+        elif extname != '':
+            return extname
+        else:
+            raise KeyError('Both EXTNAME and IMATYPE are empty, impossible to get image type')
+
+    def get_extension_by_type(self, exttype):
+        ff = fits.open(self.get_mosaic_fn())
+        h_ret = None
+        for hh in ff:
+            if self.get_imatype(hh.header) == exttype:
+                h_ret = hh
+        # Cannot close for way of dealing with input of this class
+        #ff.close()
+        if h_ret is not None:
+            return h_ret
+        else:
+            raise RuntimeError('Cannot find %s in %s' % (exttype, self.get_mosaic_fn()))
+
+    def raw_exposure_ext(self):
+        # return fits.open(self.raw_mosaic_fn)[6+i*4]
+        return self.get_extension_by_type('EXPOSURE')
+
+    def raw_intensity_ext(self):
+        return self.get_extension_by_type('INTENSITY')
+
+    def raw_significance_ext(self):
+        return self.get_extension_by_type('SIGNIFICANCE')
+
+    def raw_variance_ext(self):
+        return self.get_extension_by_type('VARIANCE')
+
 
     def inspect_raw(self):
         try:
@@ -296,14 +372,19 @@ class ImageAnalysis:
         return "ImageAnalysis"
 
     def exposure_ext(self):
-        raise
+        return self.raw_exposure_ext()
 
     def intensity_ext(self):
-        raise
+        return self.raw_intensity_ext()
+
+    def variance_ext(self):
+        return self.raw_variance_ext()
 
     def main(self):
+        print("About to analyze %s energy bands" % self.get_n_ebands())
         for self.i_band in range(self.get_n_ebands()):
             self.tag = "%.5lg_%.5lg" % self.raw_erange()
+            #print(self.tag)
             self.mask_mosaic()
             self.extract_sources()
             if self.source_analysis:
@@ -323,8 +404,7 @@ class ImageAnalysis:
     def estimate_sensitivity(self):
         print("opening mosaic...")
         exposure = self.exposure_ext().data
-
-        variance = self.variance_ext(0).data
+        variance = self.variance_ext().data
         image = self.sextractor.filtered_ext().data
         sigimage = self.sextractor2.filtered_ext().data
 
@@ -341,7 +421,7 @@ class ImageAnalysis:
 
         # sensi=rms/0.015*1e-11
 
-        e1, e2 = self.erange(0)
+        e1, e2 = self.raw_erange()
 
         # sensi = crab.Crab().to_mcrab(rms, e1, e2)
         sensi = rms
@@ -671,7 +751,7 @@ image
 
         wcs = self.raw_wcs()
 
-        print("wcs:", wcs.to_header_string())
+        #print("wcs:", wcs.to_header_string())
 
         exposure = self.raw_exposure_ext().data
 
@@ -721,46 +801,34 @@ image
 
         self.mosaic_fn = fn
 
-    def exposure_ext(self):
-        return fits.open(self.mosaic_fn)[-1]
-
-    def intensity_ext(self, i):
-        return fits.open(self.mosaic_fn)[1]
-
-    def variance_ext(self, i):
-        return fits.open(self.mosaic_fn)[2 + i * 3]
-
     def raw_wcs(self):
         return wcs.WCS(self.raw_exposure_ext().header)
 
-    def erange(self, i):
-        h = self.intensity_ext(i).header
-        return h["E_MIN"], h["E_MAX"]
-
 
 class VarmosaicImageAnalysis(ImageAnalysis):
-    def get_n_ebands(self):
-        # for i in range((len(mosaic)-1)/4):
-        return 1
-
-    def set_raw_mosaic_fn(self, fn):
-        self.raw_mosaic_fn = self.fullpath(fn)
-
-    def raw_erange(self, i):
-        h = self.raw_intensity_ext(i).header
-        return h["E_MIN"], h["E_MAX"]
-
-    def raw_exposure_ext(self):
-        return fits.open(self.raw_mosaic_fn)[-1]
-
-    def raw_significance_ext(self, i):
-        return fits.open(self.raw_mosaic_fn)[i * 3]
-
-    def raw_intensity_ext(self, i):
-        return fits.open(self.raw_mosaic_fn)[1 + i * 3]
-
-    def raw_variance_ext(self, i):
-        return fits.open(self.raw_mosaic_fn)[2 + i * 3]
+    pass
+    # def get_n_ebands(self):
+    #     # for i in range((len(mosaic)-1)/4):
+    #     return 1
+    #
+    # def set_raw_mosaic_fn(self, fn):
+    #     self.raw_mosaic_fn = self.fullpath(fn)
+    #
+    # def raw_erange(self, i):
+    #     h = self.raw_intensity_ext(i).header
+    #     return h["E_MIN"], h["E_MAX"]
+    #
+    # def raw_exposure_ext(self):
+    #     return fits.open(self.raw_mosaic_fn)[-1]
+    #
+    # def raw_significance_ext(self, i):
+    #     return fits.open(self.raw_mosaic_fn)[i * 3]
+    #
+    # def raw_intensity_ext(self, i):
+    #     return fits.open(self.raw_mosaic_fn)[1 + i * 3]
+    #
+    # def raw_variance_ext(self, i):
+    #     return fits.open(self.raw_mosaic_fn)[2 + i * 3]
 
 
 class SimpleImageAnalysis:
@@ -833,7 +901,7 @@ class SimpleImageAnalysis:
         def avg_nonan(a):
             return average(a[where(~isnan(a))])
 
-        e1, e2 = self.erange(self.i_band)
+        #e1, e2 = self.erange(self.i_band)
 
         statdict = dict(
             rms=total_rms,
@@ -869,7 +937,7 @@ class SimpleImageAnalysis:
     def raw_wcs(self):
         return wcs.WCS(self.raw_exposure_ext().header)
 
-    def erange(self, i):
+    def erange(self):
         h = self.raw_intensity_ext().header
         return h["E_MIN"], h["E_MAX"]
 
@@ -894,57 +962,53 @@ class SimpleSingleScWImageAnalysis(SimpleImageAnalysis):
 
         return self.raw_mosaic_fn
 
-    def raw_erange(self):
-        h = self.raw_intensity_ext().header
-        return h["E_MIN"], h["E_MAX"]
-
-    def raw_exposure_ext(self):
-        # return fits.open(self.raw_mosaic_fn)[6+i*4]
-        return fits.open(self.get_raw_mosaic_fn())[-1]
-
-    def raw_intensity_ext(self):
-        return fits.open(self.get_raw_mosaic_fn())[2 + self.i_band * 5]
-
-    def raw_significance_ext(self):
-        return fits.open(self.get_raw_mosaic_fn())[4 + self.i_band * 5]
-
-    def raw_variance_ext(self):
-        return fits.open(self.get_raw_mosaic_fn())[3 + self.i_band * 5]
+    # def raw_erange(self):
+    #     h = self.raw_intensity_ext().header
+    #     return h["E_MIN"], h["E_MAX"]
+    #
+    # def raw_exposure_ext(self):
+    #     # return fits.open(self.raw_mosaic_fn)[6+i*4]
+    #     return fits.open(self.get_raw_mosaic_fn())[-1]
+    #
+    # def raw_intensity_ext(self):
+    #     return fits.open(self.get_raw_mosaic_fn())[2 + self.i_band * 5]
+    #
+    # def raw_significance_ext(self):
+    #     return fits.open(self.get_raw_mosaic_fn())[4 + self.i_band * 5]
+    #
+    # def raw_variance_ext(self):
+    #     return fits.open(self.get_raw_mosaic_fn())[3 + self.i_band * 5]
 
 
 class OSAMosaicImageAnalysis(ImageAnalysis):
-    def get_n_ebands(self):
-        return self.get_total_ebands()
 
-    def get_total_ebands(self):
-        gt = fits.open(self.get_raw_mosaic_fn())
-        print("group:", gt)
-        print("found bands:", (len(gt) - 2) / 4)
-        return int((len(gt) - 2) / 4)
 
     def set_raw_mosaic_fn(self, fn):
         self.raw_mosaic_fn = fn
 
-    def get_raw_mosaic_fn(self):
+    def get_mosaic_fn(self):
         if hasattr(self, "input_image"):
             if hasattr(self.input_image, "skyima"):
                 return self.input_image.skyima.get_path()
 
         return self.raw_mosaic_fn
 
-    def raw_erange(self):
-        h = self.raw_intensity_ext().header
-        return h["E_MIN"], h["E_MAX"]
-
-    def raw_exposure_ext(self):
-        # return fits.open(self.raw_mosaic_fn)[6+i*4]
-        return fits.open(self.get_raw_mosaic_fn())[-1]
-
-    def raw_intensity_ext(self):
-        return fits.open(self.get_raw_mosaic_fn())[2 + self.i_band * 4]
-
-    def raw_significance_ext(self):
-        return fits.open(self.get_raw_mosaic_fn())[4 + self.i_band * 4]
-
-    def raw_variance_ext(self):
-        return fits.open(self.get_raw_mosaic_fn())[3 + self.i_band * 4]
+    # def raw_erange(self):
+    #     h = self.raw_intensity_ext().header
+    #     if 'E_MIN' in h.keys() and "E_MAX" in h.keys():
+    #         return h["E_MIN"], h["E_MAX"]
+    #     else:
+    #         return -1, -1
+    #
+    # def raw_exposure_ext(self):
+    #     # return fits.open(self.raw_mosaic_fn)[6+i*4]
+    #     return fits.open(self.get_raw_mosaic_fn())[-1]
+    #
+    # def raw_intensity_ext(self):
+    #     return fits.open(self.get_raw_mosaic_fn())[2 + self.i_band * 4]
+    #
+    # def raw_significance_ext(self):
+    #     return fits.open(self.get_raw_mosaic_fn())[4 + self.i_band * 4]
+    #
+    # def raw_variance_ext(self):
+    #     return fits.open(self.get_raw_mosaic_fn())[3 + self.i_band * 4]
