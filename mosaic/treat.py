@@ -49,9 +49,9 @@ def moments(data):
     X, Y = indices(data.shape)
     x = (X * data).sum() / total
     y = (Y * data).sum() / total
-    col = data[:, int(y)]
+    col = data[:, min(int(y), data.shape[1]-1)]
     width_x = sqrt(abs((arange(col.size) - y) ** 2 * col).sum() / col.sum())
-    row = data[int(x), :]
+    row = data[min(int(x), data.shape[0]-1), :]
     width_y = sqrt(abs((arange(row.size) - x) ** 2 * row).sum() / row.sum())
     height = data.max()
     return height, x, y, width_x, width_y
@@ -79,7 +79,7 @@ class SExtractor:
     back_size = 4
     threshold = 3
 
-    def __init__(self, hostdir=None):
+    def __init__(self, hostdir=None, back_size=4, threshold=3):
         self.hostdir = hostdir
         os.makedirs(hostdir, exist_ok=True)
 
@@ -262,20 +262,39 @@ class DistributionAnalysis:
 
 class ImageAnalysis:
     back_size = 30
-
+    # Size of background region estimate
     exposure_fraction_cut = 100
-
+    #It cuts at 1/100 of max exposure
     threshold = 4
-
+    # S/N threshold
     cached = True
-
     source_analysis = False
-
+    # get source parameters
     hostdir = "./"
-
+    #output dir ?
     version = "v1"
-
     i_band = 0
+    #convenience variable
+    source_radius = 5
+    annulus_radius = 10
+    save_plots = False
+    additional_sources = None
+    reference_catalog = None
+
+
+    def __init__(self, in_fn='none', int_out_prefix='', back_size=30, exposure_fraction_cut=100,
+                 source_analysis=False, hostdir="./", threshold=4, source_radius=5, annulus_radius=10,
+                 save_plots=False):
+        self.raw_mosaic_fn = in_fn
+        self.out_prefix = int_out_prefix
+        self.hostdir = hostdir
+        self.back_size = back_size
+        self.exposure_fraction_cut = exposure_fraction_cut
+        self.source_analysis = source_analysis
+        self.threshold = threshold
+        self.source_radius = source_radius
+        self.annulus_radius = annulus_radius
+        self.save_plots = save_plots
 
     def fullpath(self, x):
         return x
@@ -318,6 +337,7 @@ class ImageAnalysis:
         if 'IMATYPE' in myhead.keys():
             imatype = myhead['IMATYPE']
 
+        # Priority on IMATYPE !
         if imatype != '':
             return imatype
         elif extname != '':
@@ -339,7 +359,6 @@ class ImageAnalysis:
             raise RuntimeError('Cannot find %s in %s' % (exttype, self.get_mosaic_fn()))
 
     def raw_exposure_ext(self):
-        # return fits.open(self.raw_mosaic_fn)[6+i*4]
         return self.get_extension_by_type('EXPOSURE')
 
     def raw_intensity_ext(self):
@@ -531,7 +550,7 @@ class ImageAnalysis:
 
         significance = self.sextractor2.noobjects_ext().data / rms
         significance[significance < -1e10] = NaN
-        self.save_as_fits(significance, "significance_noobjects.fits")
+        self.save_as_fits(significance, "significance_noobjects%s.fits" % self.tag)
 
     def save_statistics(self, statdict):
         e1, e2 = self.raw_erange()
@@ -558,14 +577,14 @@ class ImageAnalysis:
         h = fits.PrimaryHDU(data)
         wcsh = self.raw_wcs().to_header()
         h.header.extend(wcsh)
-        h.writeto(fn, clobber=True)
+        h.writeto(self.hostdir+self.out_prefix+fn, clobber=True)
 
     def extract_sources(self):
         self.sextractor = SExtractor("sextractor")
         self.sextractor.back_size = self.back_size
 
         print(self.mosaic_fn + "[1]")
-        print(self.fullpath(self.mosaic_fn))
+        print(self.fullpath(self.mosaic_fn) + "[1]")
 
         self.sextractor.set_mosaic(self.fullpath(self.mosaic_fn + "[1]"))
         self.sextractor.threshold = self.threshold
@@ -574,14 +593,50 @@ class ImageAnalysis:
         rms = self.sextractor.background_rms_ext().data
         significance = self.sextractor.filtered_ext().data / rms
         significance[significance < -1e10] = NaN
-        self.save_as_fits(significance, "significance.fits")
+        self.save_as_fits(significance, "significance_first_pass.fits")
 
         self.sextractor2 = SExtractor(self.hostdir + "/sextractor2")
         self.sextractor2.back_size = self.back_size
-        self.sextractor2.threshold = 4
         self.sextractor2.threshold = self.threshold
-        self.sextractor2.set_mosaic(self.fullpath("significance.fits"))
+        self.sextractor2.set_mosaic(self.fullpath(self.out_prefix+"significance_first_pass.fits"))
         self.sextractor2.run()
+
+    def get_additional_sources(self):
+        ra = self.additional_sources['ra']
+        dec = self.additional_sources['dec']
+        #print(ra, dec)
+        x, y = self.raw_wcs().world_to_pixel_values(ra, dec)
+        #print(x, y)
+        cc = zeros_like(self.sources, shape=(len(x),))
+        cc['X_IMAGE'] = x
+        cc['Y_IMAGE'] = y
+        cc['ALPHA_SKY'] = ra
+        cc['DELTA_SKY'] = dec
+        cc['FLUX_ISO'] = ones(len(x))
+        # for a, b in zip(x, y):
+        #     cc = array(dtype=self.sources.dtype)
+        #     cc[''] = a
+        #     cc[1] = b
+        #     # print(array([[a], [b], [0], [0], [0]], dtype=self.sources.dtype))
+        self.sources = append(self.sources, cc)
+        #print(self.sources)
+
+    @staticmethod
+    def match_sources(src, isdc_sources, threshold=5. / 60.):
+        from astropy import units as u
+        from astropy.coordinates import SkyCoord
+        c = SkyCoord(ra=src['ra'] * u.degree, dec=src['dec'] * u.degree)
+        catalog = SkyCoord(ra=isdc_sources['RA_OBJ'] * u.degree, dec=isdc_sources['DEC_OBJ'] * u.degree)
+        idx, d2d, d3d = c.match_to_catalog_sky(catalog)
+        names = []
+        i = 1
+        for ii, dd in zip(idx, d2d.deg):
+            if dd < threshold:
+                names.append(isdc_sources['NAME'][ii])
+            else:
+                names.append('NEW_%02d' % i)
+                i += 1
+        return names
 
     def read_sources(self):
         cat = open(self.sextractor.hostdir + "/test.cat").read()
@@ -595,10 +650,16 @@ class ImageAnalysis:
             print(c)
 
         sources = genfromtxt(self.sextractor2.hostdir + "/test.cat", names=keys)
-        self.sources = sources
-        save(self.hostdir + "/sources.npy", sources)
 
-        # get sources fluxes
+        self.sources = sources
+
+        if self.additional_sources is not None:
+            self.get_additional_sources()
+
+
+        #######################################################################
+        #                             get sources fluxes
+        #######################################################################
 
         image = self.sextractor.filtered_ext().data
         rmsimage = self.sextractor.background_rms_ext().data
@@ -617,7 +678,7 @@ class ImageAnalysis:
 
         flag = sources["X_IMAGE"] * 0
 
-        print(sources, sources.shape, sources.dtype)
+        #print(sources, sources.shape, sources.dtype)
 
         try:
             if sources == () or len(sources) == 0:
@@ -629,20 +690,20 @@ class ImageAnalysis:
 
         for i, (x, y, ra, dec) in enumerate(
             zip(
-                sources["X_IMAGE"],
-                sources["Y_IMAGE"],
-                sources["ALPHA_SKY"],
-                sources["DELTA_SKY"],
+                self.sources["X_IMAGE"],
+                self.sources["Y_IMAGE"],
+                self.sources["ALPHA_SKY"],
+                self.sources["DELTA_SKY"],
             )
         ):
             r = (ix - x) ** 2 + (iy - y) ** 2
-            source = r < 5 ** 2
-            ring = logical_and(r < 10 ** 2, r > 5 ** 2)
+            source = r < self.source_radius ** 2
+            ring = logical_and(r < self.annulus_radius ** 2, r > self.source_radius ** 2)
 
             print(ring.shape, source.shape, r.shape)
 
             print(
-                "source", where(source)[0].shape, sources["FLUX_ISO"][i], x, y, ra, dec
+                "source", where(source)[0].shape, self.sources["FLUX_ISO"][i], x, y, ra, dec
             )
             print("ring", where(ring)[0].shape)
 
@@ -677,8 +738,12 @@ class ImageAnalysis:
             results.append([x, y, ra, dec, peakcounts, rms, expo])
 
             try:
-                fr = fitgaussian(image[y - 7 : y + 7, x - 7 : x + 7])
-                print(fr)
+                #print('Pippo')
+                image_shape = image.shape
+                fr = fitgaussian(image[max(0,int(y) - 7): min(int(y) + 7, image_shape[0]-1),
+                                        max(0,int(x) - 7): min(int(x) + 7,image_shape[1]-1)])
+                #print('Pippo')
+                #print(fr)
                 wx, wy = fr[-2:]
                 dx, dy = fr[1:3]
                 # x+=dx-6.5
@@ -688,32 +753,58 @@ class ImageAnalysis:
                 results_extra.append(
                     [x, y, ra, dec, peakcounts, rms, expo] + list(fr) + [ecc]
                 )
-                plt.clf()
-                plt.imshow(
-                    sigimage[y - 10 : y + 10, x - 10 : x + 10], interpolation="none"
-                ).set_clim(1, 5)
-                plt.colorbar()
-                plt.title("rms: %.5lg" % rms)
-                plt.plot("source_%.5lg.png" % peaksig, show=False)
-                fns += "source_%.5lg.png " % peaksig
+                if self.save_plots:
+                    plt.clf()
+                    plt.imshow(
+                        sigimage[int(y) - 10 : int(y) + 10, int(x) - 10 : int(x) + 10], interpolation="none"
+                    ).set_clim(1, 5)
+                    plt.colorbar()
+                    plt.title("rms: %.5lg" % rms)
+                    plt.savefig("source_%.5lg.png" % peaksig)
+                    fns += "source_%.5lg.png " % peaksig
             except Exception as e:
                 print("problem:", e)
+                raise RuntimeError(e)
 
+
+        #save(self.hostdir + "/sources.npy", sources)
+        if self.reference_catalog is not None:
+            #print("MATCHING SOURCES", type(results), len(results))
+            self.source_names = ImageAnalysis.match_sources({'ra': [xx[2] for xx in results],
+                                                             'dec': [xx[3] for xx in results]},
+                                                            self.reference_catalog)
+
+        if hasattr(self, 'source_names'):
+            regionfile_extra = "\n".join(
+                [
+                    "circle(%.5lg,%.5lg,3) # text={%s}"
+                    % (x[0], x[1], self.source_names[i])
+                    for i, x in enumerate(results_extra)
+                ]
+            )
+            regionfile = "\n".join(
+                [
+                    "circle(%.5lg,%.5lg,3) # text={%s}"
+                    % (x[0], x[1], self.source_names[i])
+                    for i, x in enumerate(results_extra)
+                ]
+            )
         # write region file
-        regionfile_extra = "\n".join(
-            [
-                "circle(%.5lg,%.5lg,3) # text={%.5lg,e=%.5lg}"
-                % (x[0], x[1], x[4] / x[5], x[-1])
-                for x in results_extra
-            ]
-        )
-        regionfile = "\n".join(
-            [
-                "circle(%.5lg,%.5lg,3) # text={%.5lg,e=%.5lg}"
-                % (x[0], x[1], x[4] / x[5], x[-1])
-                for x in results
-            ]
-        )
+        else:
+            regionfile_extra = "\n".join(
+                [
+                    "circle(%.5lg,%.5lg,3) # text={%.5lg,e=%.5lg}"
+                    % (x[0], x[1], x[4] / x[5], x[-1])
+                    for x in results_extra
+                ]
+            )
+            regionfile = "\n".join(
+                [
+                    "circle(%.5lg,%.5lg,3) # text={%.5lg,e=%.5lg}"
+                    % (x[0], x[1], x[4] / x[5], x[-1])
+                    for x in results
+                ]
+            )
         # regionfile="\n".join(["circle(%.5lg,%.5lg,3) # text={%.5lg,e=%.5lg}"%(x,y,peaksig,ecc) for x,y in zip(sources[flag==0]["X_IMAGE"],sources[flag==0]["Y_IMAGE"])])
         regionfile = (
             """
@@ -733,17 +824,29 @@ image
 """
             + regionfile_extra
         )
-        open("source.reg", "w").write(regionfile)
-        open("source_extra.reg", "w").write(regionfile_extra)
+        open(self.hostdir+self.out_prefix+"source.reg", "w").write(regionfile)
+        open(self.hostdir+self.out_prefix+"source_extra.reg", "w").write(regionfile_extra)
 
         self.source_results = pd.DataFrame(data=results,
             columns=['x', 'y', 'ra', 'dec', 'peakcounts', 'rms', 'expo'])
 
-        self.source_results.to_csv('source_results.csv')
+        self.source_results_extra = pd.DataFrame(data=results_extra,
+            columns=['x', 'y', 'ra', 'dec', 'peakcounts', 'rms', 'expo', 'height', 'x_gauss', 'y_gauss',
+                     'width_x', 'width_y', 'ecc'])
 
-        savetxt("source_results.txt", array(results))
-        savetxt("source_results_extra.txt", array(results_extra))
-        os.system("montage -geometry 300x300 " + fns + " sources.png")
+        if hasattr(self, 'source_names'):
+            #print("ADDING Names to Pandas")
+            self.source_results['name'] = self.source_names
+            self.source_results_extra['name'] = self.source_names
+
+
+        self.source_results.to_csv(self.hostdir+self.out_prefix+'source_results.csv')
+        self.source_results_extra.to_csv(self.hostdir+self.out_prefix+'source_results_extra.csv')
+
+        savetxt(self.hostdir+self.out_prefix+"source_results.txt", array(results))
+        savetxt(self.hostdir+self.out_prefix+"source_results_extra.txt", array(results_extra))
+        if self.save_plots:
+            os.system("montage -geometry 300x300 " + fns + " sources.png")
 
 
     def mask_mosaic(self):
@@ -796,7 +899,8 @@ image
             h.header["E_MAX"] = e2
             print("updating header:", e1, e2)
 
-        fn = "masked_mosaic_%.5lg_%.5lg.fits" % (e1, e2)
+        fn = self.hostdir+self.out_prefix+"masked_mosaic_%s.fits" % (self.tag)
+
         fits.HDUList(hdu_list).writeto(fn, clobber=True)
 
         self.mosaic_fn = fn
@@ -844,6 +948,8 @@ class SimpleImageAnalysis:
 
     version = "v1"
 
+    out_prefix = ''
+
     def fullpath(self, x):
         return x
 
@@ -874,7 +980,7 @@ class SimpleImageAnalysis:
 
     def main(self):
         for self.i_band in range(self.get_n_ebands()):
-            self.tag = "%.5lg_%.5lg" % self.raw_erange()
+            self.tag = "_%.5lg_%.5lg" % self.raw_erange()
             self.estimate_sensitivity()
             # self.pixel_distribution()
         self.dump_statistics()
@@ -894,7 +1000,7 @@ class SimpleImageAnalysis:
 
         rms = (gf(intensity ** 2, 30) - gf(intensity, 30) ** 2) ** 0.5
 
-        fits.PrimaryHDU(rms).writeto("rms_%i.fits" % self.i_band, clobber=True)
+        fits.PrimaryHDU(rms).writeto(self.hostdir+self.out_prefix+"rms_%i.fits" % self.i_band, clobber=True)
 
         total_rms = std(significance[mask])
 
