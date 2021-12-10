@@ -49,9 +49,9 @@ def moments(data):
     X, Y = indices(data.shape)
     x = (X * data).sum() / total
     y = (Y * data).sum() / total
-    col = data[:, min(int(y), data.shape[1]-1)]
+    col = data[:, max(0, min(int(y), data.shape[1]-1))]
     width_x = sqrt(abs((arange(col.size) - y) ** 2 * col).sum() / col.sum())
-    row = data[min(int(x), data.shape[0]-1), :]
+    row = data[max(0, min(int(x), data.shape[0]-1)), :]
     width_y = sqrt(abs((arange(row.size) - x) ** 2 * row).sum() / row.sum())
     height = data.max()
     return height, x, y, width_x, width_y
