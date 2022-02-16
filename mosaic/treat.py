@@ -356,19 +356,35 @@ class ImageAnalysis:
         if h_ret is not None:
             return h_ret
         else:
-            raise RuntimeError('Cannot find %s in %s' % (exttype, self.get_mosaic_fn()))
+            return None
 
     def raw_exposure_ext(self):
-        return self.get_extension_by_type('EXPOSURE')
+        ret = self.get_extension_by_type('EXPOSURE')
+        if ret is None:
+            raise RuntimeError('Cannot find EXPOSURE in %s' % (self.get_mosaic_fn()))
+        return ret
 
     def raw_intensity_ext(self):
-        return self.get_extension_by_type('INTENSITY')
+        #IBIS
+        ret = self.get_extension_by_type('INTENSITY')
+        if ret is None:
+            #JEM-X
+            ret = self.get_extension_by_type('RECONSTRUCTED')
+            if ret is None:
+                raise RuntimeError('Cannot find INTENSITY/Reconstructed in %s' % (self.get_mosaic_fn()))
+        return ret
 
     def raw_significance_ext(self):
-        return self.get_extension_by_type('SIGNIFICANCE')
+        ret = self.get_extension_by_type('SIGNIFICANCE')
+        if ret is None:
+            raise RuntimeError('Cannot find SIGNIFICANCE in %s' % (self.get_mosaic_fn()))
+        return ret
 
     def raw_variance_ext(self):
-        return self.get_extension_by_type('VARIANCE')
+        ret = self.get_extension_by_type('VARIANCE')
+        if ret is None:
+            raise RuntimeError('Cannot find VARIANCE in %s' % (self.get_mosaic_fn()))
+        return ret
 
 
     def inspect_raw(self):
