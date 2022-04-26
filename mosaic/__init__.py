@@ -177,11 +177,14 @@ class Mosaic:
             incremental_kw_min = ['TSTART', 'DATE-OBS', 'TFIRST', 'DATE', 'MJD-OBS']
             incremental_kw_max = ['TSTOP', 'DATE-END', 'TLAST', 'MJD-END']
             average_kw = ['DEADC']
+            copy_kw = ['E_MIN', 'E_MAX', 'E_MEAN', 'TELESCOP', 'TIMEREF', 'TIMESYS', 'TIMEUNIT',
+                       'HDUCLAS1', 'HDUCLASS', 'DETNAM']
 
             keyword_list = [(additive_kw, lambda x, y: x + y),
                             (average_kw, lambda x, y: (x + y) / 2),
                             (incremental_kw_min, lambda x, y: min(x, y)),
-                            (incremental_kw_max, lambda x, y: max(x, y))]
+                            (incremental_kw_max, lambda x, y: max(x, y)),
+                            (copy_kw, lambda x, y: x if x == y else x + y)]
 
             keywords = dict()
 
@@ -457,9 +460,9 @@ class HealpixMosaic(Mosaic):
                     )[k]
 
             h['IMATYPE'] = h['EXTNAME']
-            if 'keywords' in  self.mosaic.keys():
+            if 'keywords' in self.mosaic.keys():
                 for key, value in self.mosaic['keywords'].items():
-                    logger.debug('Update keyword %s = %s',key, value)
+                    logger.debug('Update keyword %s = %s', key, value)
                     h[key] = value
 
             mp = np.zeros((ni, nj))
