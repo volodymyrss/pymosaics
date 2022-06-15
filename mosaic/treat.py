@@ -593,7 +593,7 @@ class ImageAnalysis:
         h = fits.PrimaryHDU(data)
         wcsh = self.raw_wcs().to_header()
         h.header.extend(wcsh)
-        h.writeto(self.hostdir+self.out_prefix+fn, clobber=True)
+        h.writeto(self.hostdir+self.out_prefix+fn, overwrite=True)
 
     def extract_sources(self):
         self.sextractor = SExtractor("sextractor")
@@ -917,7 +917,7 @@ image
 
         fn = self.hostdir+self.out_prefix+"masked_mosaic_%s.fits" % (self.tag)
 
-        fits.HDUList(hdu_list).writeto(fn, clobber=True)
+        fits.HDUList(hdu_list).writeto(fn, overwrite=True)
 
         self.mosaic_fn = fn
 
@@ -1016,7 +1016,7 @@ class SimpleImageAnalysis:
 
         rms = (gf(intensity ** 2, 30) - gf(intensity, 30) ** 2) ** 0.5
 
-        fits.PrimaryHDU(rms).writeto(self.hostdir+self.out_prefix+"rms_%i.fits" % self.i_band, clobber=True)
+        fits.PrimaryHDU(rms).writeto(self.hostdir+self.out_prefix+"rms_%i.fits" % self.i_band, overwrite=True)
 
         total_rms = std(significance[mask])
 
