@@ -1,4 +1,4 @@
-#pyli
+# pylint: disable-all
 
 #!/bin/env python
 
