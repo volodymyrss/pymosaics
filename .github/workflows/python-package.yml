@@ -39,7 +39,7 @@ jobs:
         cd sextractor-2.25.0
         bash autogen.sh
         ./configure
-        make install
+        sudo make install
 
     - name: Lint with flake8
       run: |
