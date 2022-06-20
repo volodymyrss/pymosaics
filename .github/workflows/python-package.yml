@@ -34,7 +34,7 @@ jobs:
 
     - name: Install sextractor
       run: |
-        apt-get install -y fftw3 fftw3-dev pkg-config
+        sudo apt-get install -y fftw3 fftw3-dev pkg-config
         curl -L https://github.com/astromatic/sextractor/archive/refs/tags/2.25.0.tar.gz | tar xzf - 
         cd sextractor-2.25.0
         bash autogen.sh
