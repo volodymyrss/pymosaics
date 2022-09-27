@@ -662,11 +662,13 @@ class ImageAnalysis:
             keys, keypositions = list(
                 zip(*[reversed(re.search(" *(\d+) (.*?) ", c).groups()) for c in cd])
             )
-        except:
-            print(c)
+        except Exception as e:
+            print("problem with keys: ", e)
 
+        # print("Reading " + self.sextractor2.hostdir + "/test.cat")
         sources = genfromtxt(self.sextractor2.hostdir + "/test.cat", names=keys)
-
+        # print(keys)
+        # print(sources)
         self.sources = sources
 
         if self.additional_sources is not None:
@@ -697,11 +699,11 @@ class ImageAnalysis:
         #print(sources, sources.shape, sources.dtype)
 
         try:
-            if sources == () or len(sources) == 0:
+            if len(sources) == 0:
                 print("no sources!")
                 return
         except Exception as e:
-            print("problem")
+            print("problem with sources ", e)
             return
 
         for i, (x, y, ra, dec) in enumerate(
@@ -779,7 +781,7 @@ class ImageAnalysis:
                     plt.savefig("source_%.5lg.png" % peaksig)
                     fns += "source_%.5lg.png " % peaksig
             except Exception as e:
-                print("problem:", e)
+                print("problem with fitting: ", e)
                 raise RuntimeError(e)
 
 
