@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.7, 3.8, 3.9]
+        python-version: [3.8, 3.9]
 
     steps:
     - uses: actions/checkout@v2
@@ -34,11 +34,13 @@ jobs:
 
     - name: Install sextractor
       run: |
-        sudo apt-get install -y fftw3 fftw3-dev pkg-config libblas-dev liblapack-dev libatlas-cpp-0.6-dev g++ make automake autoconf libtool libatlas-base-dev
-        curl -L https://github.com/astromatic/sextractor/archive/refs/tags/2.25.0.tar.gz | tar xzf - 
-        cd sextractor-2.25.0
+        sudo apt-get install -y fftw3 fftw3-dev pkg-config libblas-dev liblapack-dev libatlas-cpp-0.6-dev g++ make automake autoconf libtool libatlas-base-dev libcfitsio-dev python3-fitsio
+        curl -L https://github.com/astromatic/sextractor/archive/refs/tags/2.28.0.tar.gz | tar xzf -
+        cd sextractor-2.28.0
         bash autogen.sh
+        echo $LD_LIBRARY_PATH
         ./configure
+        make -j
         sudo make install
 
     - name: Lint with flake8

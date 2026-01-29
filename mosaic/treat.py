@@ -6,37 +6,51 @@ import astropy.io.fits as fits
 import numpy as np
 import pandas as pd
 import subprocess
-import os, re
-
+import os
+import re
+import logging
 from astropy import wcs
 from scipy.optimize import curve_fit
-
 import matplotlib.pylab as plt
+from scipy import optimize
+
+logging.basicConfig()
+
+logger = logging.getLogger()
 
 # Our goal in this image analysis is to estimate sensitivity in the whole mosaic 
 # We also find sources and estimate background component
 # see examples on https://apc.u-paris.fr/Downloads/astrog/savchenk/imgb/ISGRI_deep.html
 
 # TODO: find the config
-sextractor_share = "/usr/local/share/sextractor"
+sextractor_share_locs = ["/usr/local/share/sextractor",
+                         "/opt/conda/share/sextractor/",
+                         "/opt/miniconda/share/sextractor/"]
+
+tmp = os.popen('command -v sex').read().replace('bin/sex\n', 'share/sextractor')
+sextractor_share_locs.append(tmp)
+notFound = True
+for sextractor_share in sextractor_share_locs:
+    if os.path.isdir(sextractor_share):
+        logger.warning(f'Check {sextractor_share}')
+        notFound = False
+        break
+if notFound: 
+    raise Exception('No sextractor share available')
+
 
 def render(*args):
-    print(*args)
+    logger.info('%s', *args)
+    return
 
-## 2d gaussian
-
-# todo not
-from numpy import *
-from scipy import optimize
-
-# import crab
+# 2d gaussian
 
 
 def gaussian(height, center_x, center_y, width_x, width_y):
     """Returns a gaussian function with the given parameters"""
     width_x = float(width_x)
     width_y = float(width_y)
-    return lambda x, y: height * exp(
+    return lambda x, y: height * np.exp(
         -(((center_x - x) / width_x) ** 2 + ((center_y - y) / width_y) ** 2) / 2
     )
 
@@ -46,13 +60,14 @@ def moments(data):
     the gaussian parameters of a 2D distribution by calculating its
     moments"""
     total = data.sum()
-    X, Y = indices(data.shape)
+    X, Y = np.indices(data.shape)
     x = (X * data).sum() / total
     y = (Y * data).sum() / total
     col = data[:, max(0, min(int(y), data.shape[1]-1))]
-    width_x = sqrt(abs((arange(col.size) - y) ** 2 * col).sum() / col.sum())
+    col[~np.isfinite(col)] = 0
+    width_x = np.sqrt(abs((np.arange(col.size) - y) ** 2 * col).sum() / col.sum())
     row = data[max(0, min(int(x), data.shape[0]-1)), :]
-    width_y = sqrt(abs((arange(row.size) - x) ** 2 * row).sum() / row.sum())
+    width_y = np.sqrt(abs((np.arange(row.size) - x) ** 2 * row).sum() / row.sum())
     height = data.max()
     return height, x, y, width_x, width_y
 
@@ -62,17 +77,14 @@ def fitgaussian(data):
     the gaussian parameters of a 2D distribution found by a fit"""
     params = moments(data)
 
-    print("moments:", params)
+    logger.info("moments: %s",  list(params))
 
-    errorfunction = lambda p: ravel(gaussian(*p)(*indices(data.shape)) - data)
+    errorfunction = lambda p: np.ravel(gaussian(*p)(*np.indices(data.shape)) - data)
     # errorfunction = lambda p: ravel(gaussian(*p)(*indices(data.shape)) -
     # data)
     p, success = optimize.leastsq(errorfunction, params)
-    print("optimized", p, success)
+    logger.info("optimized %s %s", p, success)
     return p
-
-
-##
 
 
 class SExtractor:
@@ -95,7 +107,6 @@ class SExtractor:
         except:
             os.chdir(cwd)
             raise
-            
 
     def _run(self):
         config = open(sextractor_share + "/default.sex").read()
@@ -114,9 +125,8 @@ class SExtractor:
             "0 1 0\n"
             "0 0 0\n")
         
-
         def set_key(config, key, value):
-            return re.sub("(?<=" + key + "[ \t])(.*?)(?=\n)", value + " #", config)
+            return re.sub(r"(?<=" + key + r"[ \t])(.*?)(?=\n)", value + " #", config)
 
         check_images = [
             ("BACKGROUND_RMS", "background_rms.fits"),
@@ -152,8 +162,6 @@ class SExtractor:
         return fits.open(self.hostdir + "/noobjects.fits")[0]
 
 
-
-
 class DistributionAnalysis:
     def __init__(self, pixels):
         self.set_pixels(pixels)
@@ -163,9 +171,9 @@ class DistributionAnalysis:
 
     def show_all(self):
         pixels = self.pixels
-        h = plot.p.hist(
-            pixels[~isnan(pixels)].flatten(),
-            linspace(-6, 20, 1000),
+        h = np.plot.p.hist(
+            pixels[~np.isnan(pixels)].flatten(),
+            np.linspace(-6, 20, 1000),
             lw=0,
             alpha=0.5,
             log=True,
@@ -176,17 +184,17 @@ class DistributionAnalysis:
 
         bin_centres, hist_fit = self.core_fit
 
-        plot.p.plot(bin_centres, hist_fit)
+        np.plot.p.plot(bin_centres, hist_fit)
 
-        plot.p.xlim([-10, 10])
-        plot.p.ylim([1e-5, 1])
-        plot.p.grid()
-        plot.plot("sig_histogram.png")
+        np.plot.p.xlim([-10, 10])
+        np.plot.p.ylim([1e-5, 1])
+        np.plot.p.grid()
+        np.plot.plot("sig_histogram.png")
 
     def calibrate(self):
         pixels = self.pixels
-        h = plot.p.hist(
-            pixels[~isnan(pixels)].flatten(), linspace(-10, 10, 30), lw=0, alpha=0.5
+        h = np.plot.p.hist(
+            pixels[~np.isnan(pixels)].flatten(), np.linspace(-10, 10, 30), lw=0, alpha=0.5
         )
         hist, bin_edges = h[0:2]
         bin_centres = (bin_edges[:-1] + bin_edges[1:]) / 2
@@ -199,30 +207,30 @@ class DistributionAnalysis:
         symneg = symneg + symneg[::-1]
         symneg[symneg.shape[0] / 2] /= 2
 
-        plot.p.plot(bin_centres, hist)
-        plot.p.plot(bin_centres, symneg)
-        plot.p.errorbar(bin_centres, hist - symneg, sqrt(symneg))
+        np.plot.p.plot(bin_centres, hist)
+        np.plot.p.plot(bin_centres, symneg)
+        np.plot.p.errorbar(bin_centres, hist - symneg, np.sqrt(symneg))
 
         rec_thresh = -(bin_centres[symneg > 0].min())
 
-        print("recommended threshold for 1 noise source", rec_thresh)
+        logger.info("recommended threshold for 1 noise source %f", rec_thresh)
 
-        plot.p.semilogy()
+        np.plot.p.semilogy()
 
-        plot.p.grid()
-        plot.plot("sig_histogram.png")
+        np.plot.p.grid()
+        np.plot.plot("sig_histogram.png")
 
         self.calibration = None
 
         import scipy.stats
 
-        print(render("{RED}kurtosis:{/}"), scipy.stats.kurtosis(pixels))
+        logger.info("{RED}kurtosis:{/} %f", scipy.stats.kurtosis(pixels))
 
     def fit_core(self):
         pixels = self.pixels
-        h = plot.p.hist(
-            pixels[~isnan(pixels)].flatten(),
-            linspace(-6, 6, 1000),
+        h = np.plot.p.hist(
+            pixels[~np.isnan(pixels)].flatten(),
+            np.linspace(-6, 6, 1000),
             lw=0,
             alpha=0.5,
             log=True,
@@ -233,7 +241,7 @@ class DistributionAnalysis:
 
         def gauss(x, *p):
             A, mu, sigma = p
-            return A * exp(-((x - mu) ** 2) / (2.0 * sigma ** 2)) / sqrt(2 * pi * sigma)
+            return A * np.exp(-((x - mu) ** 2) / (2.0 * sigma ** 2)) / np.sqrt(2 * np.pi * sigma)
 
         def lorentz(x, *p):
             A, mu, gamma = p
@@ -250,14 +258,14 @@ class DistributionAnalysis:
         self.core_fit_function = lambda x: profile(x, *coeff)
         self.core_fit = bin_centres, hist_fit
 
-        print("fit result", coeff)
+        logger.info("fit result %s", coeff)
 
-        plot.p.plot(bin_centres, hist_fit)
+        np.plot.p.plot(bin_centres, hist_fit)
 
-        plot.p.xlim([-10, 10])
-        plot.p.ylim([1e-5, 1])
-        plot.p.grid()
-        plot.plot("sig_histogram_core.png")
+        np.plot.p.xlim([-10, 10])
+        np.plot.p.ylim([1e-5, 1])
+        np.plot.p.grid()
+        np.plot.plot("sig_histogram_core.png")
 
 
 class ImageAnalysis:
@@ -392,19 +400,19 @@ class ImageAnalysis:
 
     def inspect_raw(self):
         try:
-            print("exposure", self.raw_exposure_ext().header["EXTNAME"])
-            print("intensity", self.raw_intensity_ext().header["EXTNAME"])
-            print("significance", self.raw_significance_ext().header["EXTNAME"])
-            print("variance", self.raw_variance_ext().header["EXTNAME"])
+            logger.info("exposure %s", self.raw_exposure_ext().header["EXTNAME"])
+            logger.info("intensity %s", self.raw_intensity_ext().header["EXTNAME"])
+            logger.info("significance %s", self.raw_significance_ext().header["EXTNAME"])
+            logger.info("variance %s", self.raw_variance_ext().header["EXTNAME"])
         except:
-            print("mosaic without extname?")
+            logger.info("mosaic without extname?")
         try:
-            print("exposure", self.raw_exposure_ext().header["IMATYPE"])
-            print("intensity", self.raw_intensity_ext().header["IMATYPE"])
-            print("significance", self.raw_significance_ext().header["IMATYPE"])
-            print("variance", self.raw_variance_ext().header["IMATYPE"])
+            logger.info("exposure %s", self.raw_exposure_ext().header["IMATYPE"])
+            logger.info("intensity %s", self.raw_intensity_ext().header["IMATYPE"])
+            logger.info("significance %s", self.raw_significance_ext().header["IMATYPE"])
+            logger.info("variance %s", self.raw_variance_ext().header["IMATYPE"])
         except:
-            print("mosaic without imatype?")
+            logger.info("mosaic without imatype?")
 
     def get_shortname(self):
         return "ImageAnalysis"
@@ -419,7 +427,7 @@ class ImageAnalysis:
         return self.raw_variance_ext()
 
     def main(self):
-        print("About to analyze %s energy bands" % self.get_n_ebands())
+        logger.info("About to analyze %s energy bands" % self.get_n_ebands())
         for self.i_band in range(self.get_n_ebands()):
             self.tag = "%.5lg_%.5lg" % self.raw_erange()
             #print(self.tag)
@@ -440,22 +448,22 @@ class ImageAnalysis:
         # D.show_all()
 
     def estimate_sensitivity(self):
-        print("opening mosaic...")
+        logger.info("opening mosaic...")
         exposure = self.exposure_ext().data
         variance = self.variance_ext().data
         image = self.sextractor.filtered_ext().data
         sigimage = self.sextractor2.filtered_ext().data
 
-        print("opening rms...")
+        logger.info("opening rms...")
 
         rms = self.sextractor.background_rms_ext().data
 
         bkg = self.sextractor.background_ext().data
 
-        print(rms)
+        logger.debug('%s', rms)
 
         def avg_nonan(a):
-            return average(a[where(~isnan(a))])
+            return np.average(a[np.where(~np.isnan(a))])
 
         # sensi=rms/0.015*1e-11
 
@@ -473,58 +481,32 @@ class ImageAnalysis:
         cts2mcrab = lambda x:x
         mcrab2ecs = lambda x:x
 
-        print(render("{RED}enery band{/}"), e1, e2)
-        print(
-            render("{RED}avg_nonan{/}                             "),
-            avg_nonan(sensi),
-            render("{YEL}mcrab{/}"),
-            mcrab2ecs(avg_nonan(sensi)),
-            "ecs",
-            avg_nonan(exposure) / 1e6,
-            "Ms",
-        )
+        logger.info("{RED}enery band{/} %f %f", e1, e2)
+        logger.info("{RED}avg_nonan{/}                             %f", avg_nonan(sensi))
+        logger.info("{YEL}mcrab{/} %f ecs %f Ms", mcrab2ecs(avg_nonan(sensi)), avg_nonan(exposure) / 1e6,)
 
-        print(
-            render("{RED}minimal sensitivity{/}                   "),
-            sensi.min(),
-            render("{YEL}mcrab{/}"),
-            mcrab2ecs(sensi.min()),
-            "ecs",
-            exposure.flatten()[sensi.flatten().argmin()] / 1e6,
-            "Ms",
-        )
+        logger.info("{RED}minimal sensitivity{/} %f',                    ", sensi.min())
+        logger.info("{YEL}mcrab{/} %f ecs %f Ms", mcrab2ecs(sensi.min()), exposure.flatten()[sensi.flatten().argmin()] / 1e6)
 
-        print(
-            render("{RED}exposure-corrected avg_nonan{/}          "),
-            avg_nonan(sensi * sqrt(exposure / 1e6)),
-            render("{YEL}mcrab-Ms{/}"),
-            mcrab2ecs(avg_nonan(sensi * sqrt(exposure / 1e6))),
-            "ecs",
-            avg_nonan(exposure) / 1e6,
-            "Ms",
-        )
+        logger.info("{RED}exposure-corrected avg_nonan{/}          %f", avg_nonan(sensi * np.sqrt(exposure / 1e6)))
+        logger.info("{YEL}mcrab-Ms{/} %f ecs %f Ms", mcrab2ecs(avg_nonan(sensi * np.sqrt(exposure / 1e6))), avg_nonan(exposure) / 1e6)
 
-        print(
-            render("{RED}exposure-corrected minimal sensitivity{/}"),
-            sensi.min() * 1e-3 * sqrt(exposure.flatten()[sensi.flatten().argmin()]),
-            render("{YEL}mcrab-Ms{/}"),
+        logger.info("{RED}exposure-corrected minimal sensitivity{/} %f" ,   
+                    sensi.min() * 1e-3 * np.sqrt(exposure.flatten()[sensi.flatten().argmin()]))
+        logger.info("{YEL}mcrab-Ms{/} %f ecs %f Ms",
             mcrab2ecs(
-                sensi.min() * 1e-3 * sqrt(exposure.flatten()[sensi.flatten().argmin()])
+                sensi.min() * 1e-3 * np.sqrt(exposure.flatten()[sensi.flatten().argmin()])
             ),
-            "ecs",
             exposure.flatten()[sensi.flatten().argmin()] / 1e6,
-            "Ms",
-        )
+            )
 
         bmin, bmax = bkg.min(), bkg.max()
-        print(
-            render("{RED}smooth background range{/}                   "),
+        logger.info("{RED}smooth background range{/}                   %f %f",
             cts2mcrab(bmin),
-            cts2mcrab(bmax),
-            render("{YEL}mcrab{/}"),
+            cts2mcrab(bmax))
+        logger.info("{YEL}mcrab{/} %f %f ecs",
             cts2ecs(bmin),
             cts2ecs(bmax),
-            "ecs",
         )
 
         statdict = dict(
@@ -535,10 +517,10 @@ class ImageAnalysis:
             exposure_at_sensi_min=exposure.flatten()[rms.flatten().argmin()],
             exposure_avg_nonan=avg_nonan(exposure),
             sensi_min_exposure_corrected_Ms=sensi.min()
-            * sqrt(exposure.flatten()[sensi.flatten().argmin()])
+            * np.sqrt(exposure.flatten()[sensi.flatten().argmin()])
             * 1e-3,
             sensi_avg_nonan_exposure_corrected_Ms=avg_nonan(
-                sensi * sqrt(exposure / 1e6)
+                sensi * np.sqrt(exposure / 1e6)
             ),
             exposyre_max=exposure.max(),
             smooth_b_min=cts2mcrab(bmin),
@@ -558,17 +540,17 @@ class ImageAnalysis:
 
         self.save_as_fits(sensi, "sensitivity%s.fits" % self.tag)
         self.save_as_fits(
-            sensi * sqrt(exposure) * 1e-3, "relative_sensitivity%s.fits" % self.tag
+            sensi * np.sqrt(exposure) * 1e-3, "relative_sensitivity%s.fits" % self.tag
         )
         self.save_as_fits(rms ** 2 / variance, "excess_rms%s.fits" % self.tag)
 
         rms = self.sextractor2.background_rms_ext().data
         significance = self.sextractor2.filtered_ext().data / rms
-        significance[significance < -1e10] = NaN
+        significance[significance < -1e10] = np.nan
         self.save_as_fits(significance, "significance%s.fits" % self.tag)
 
         significance = self.sextractor2.noobjects_ext().data / rms
-        significance[significance < -1e10] = NaN
+        significance[significance < -1e10] = np.nan
         self.save_as_fits(significance, "significance_noobjects%s.fits" % self.tag)
 
     def save_statistics(self, statdict):
@@ -602,8 +584,8 @@ class ImageAnalysis:
         self.sextractor = SExtractor("sextractor")
         self.sextractor.back_size = self.back_size
 
-        print(self.mosaic_fn + "[1]")
-        print(self.fullpath(self.mosaic_fn) + "[1]")
+        logger.debug(self.mosaic_fn + "[1]")
+        logger.debug(self.fullpath(self.mosaic_fn) + "[1]")
 
         self.sextractor.set_mosaic(self.fullpath(self.mosaic_fn + "[1]"))
         self.sextractor.threshold = self.threshold
@@ -611,7 +593,7 @@ class ImageAnalysis:
 
         rms = self.sextractor.background_rms_ext().data
         significance = self.sextractor.filtered_ext().data / rms
-        significance[significance < -1e10] = NaN
+        significance[significance < -1e10] = np.nan
         self.save_as_fits(significance, "significance_first_pass.fits")
 
         self.sextractor2 = SExtractor(self.hostdir + "/sextractor2")
@@ -626,18 +608,18 @@ class ImageAnalysis:
         #print(ra, dec)
         x, y = self.raw_wcs().world_to_pixel_values(ra, dec)
         #print(x, y)
-        cc = zeros_like(self.sources, shape=(len(x),))
+        cc = np.zeros_like(self.sources, shape=(len(x),))
         cc['X_IMAGE'] = x
         cc['Y_IMAGE'] = y
         cc['ALPHA_SKY'] = ra
         cc['DELTA_SKY'] = dec
-        cc['FLUX_ISO'] = ones(len(x))
+        cc['FLUX_ISO'] = np.ones(len(x))
         # for a, b in zip(x, y):
         #     cc = array(dtype=self.sources.dtype)
         #     cc[''] = a
         #     cc[1] = b
         #     # print(array([[a], [b], [0], [0], [0]], dtype=self.sources.dtype))
-        self.sources = append(self.sources, cc)
+        self.sources = np.append(self.sources, cc)
         #print(self.sources)
 
     @staticmethod
@@ -663,13 +645,15 @@ class ImageAnalysis:
 
         try:
             keys, keypositions = list(
-                zip(*[reversed(re.search(" *(\d+) (.*?) ", c).groups()) for c in cd])
+                zip(*[reversed(re.search(r" *(\d+) (.*?) ", c).groups()) for c in cd])
             )
-        except:
-            print(c)
+        except Exception as e:
+            logger.warning("problem with keys: %s", e)
 
-        sources = genfromtxt(self.sextractor2.hostdir + "/test.cat", names=keys)
-
+        # print("Reading " + self.sextractor2.hostdir + "/test.cat")
+        sources = np.genfromtxt(self.sextractor2.hostdir + "/test.cat", names=keys)
+        # print(keys)
+        # print(sources)
         self.sources = sources
 
         if self.additional_sources is not None:
@@ -684,14 +668,14 @@ class ImageAnalysis:
         rmsimage = self.sextractor.background_rms_ext().data
         sigimage = self.sextractor2.filtered_ext().data
         exposure = self.raw_exposure_ext().data
-        ix, iy = meshgrid(arange(image.shape[1]), arange(image.shape[0]))
+        ix, iy = np.meshgrid(np.arange(image.shape[1]), np.arange(image.shape[0]))
 
-        print(ix.shape, iy.shape, image.shape)
+        logger.debug('%s %s %s', ix.shape, iy.shape, image.shape)
 
         results = []
         results_extra = []
 
-        image[image < -1e29] = NaN
+        image[image < -1e29] = np.nan
 
         fns = ""
 
@@ -700,11 +684,11 @@ class ImageAnalysis:
         #print(sources, sources.shape, sources.dtype)
 
         try:
-            if sources == () or len(sources) == 0:
-                print("no sources!")
+            if len(sources) == 0:
+                logger.info("no sources!")
                 return
         except Exception as e:
-            print("problem")
+            logger.warning("problem with sources %s", e)
             return
 
         for i, (x, y, ra, dec) in enumerate(
@@ -717,35 +701,35 @@ class ImageAnalysis:
         ):
             r = (ix - x) ** 2 + (iy - y) ** 2
             source = r < self.source_radius ** 2
-            ring = logical_and(r < self.annulus_radius ** 2, r > self.source_radius ** 2)
+            ring = np.logical_and(r < self.annulus_radius ** 2, r > self.source_radius ** 2)
 
-            print(ring.shape, source.shape, r.shape)
+            logger.debug('%s %s %s', ring.shape, source.shape, r.shape)
 
-            print(
-                "source", where(source)[0].shape, self.sources["FLUX_ISO"][i], x, y, ra, dec
+            logger.debug(
+                "source %s %e %e %e %e %e", np.where(source)[0].shape, self.sources["FLUX_ISO"][i], x, y, ra, dec
             )
-            print("ring", where(ring)[0].shape)
-
-            if any(isnan(image[logical_or(source, ring)])):
-                print("there is nan in the source region! skipping")
+            logger.debug("ring %s", np.where(ring)[0].shape)
+            logger.debug('%s', image[np.logical_or(source, ring)])
+            if any(np.isnan(image[np.logical_or(source, ring)])):
+                logger.info("treat image: there is nan in the source region! skipping")
                 flag[i] = 1
                 continue
 
-            expo = average(exposure[source])
+            expo = np.average(exposure[source])
 
             good = image > 1e-20
-            source = logical_and(source, good)
-            ring = logical_and(ring, good)
+            source = np.logical_and(source, good)
+            ring = np.logical_and(ring, good)
 
             if image[source].flatten().shape[0] == 0:
-                print("empty image for this one!")
+                logger.warning("empty image for this one!")
                 continue
 
             peakcounts = image[source].max()
             peaksig = sigimage[source].max()
-            sumcounts = image[source].sum() - average(image[ring]) * source.sum()
+            sumcounts = image[source].sum() - np.average(image[ring]) * source.sum()
 
-            rms = average(rmsimage[source])
+            rms = np.average(rmsimage[source])
 
             # print
             # print "position:",x,y,ra,dec
@@ -782,7 +766,7 @@ class ImageAnalysis:
                     plt.savefig("source_%.5lg.png" % peaksig)
                     fns += "source_%.5lg.png " % peaksig
             except Exception as e:
-                print("problem:", e)
+                logger.warning("problem with fitting: %s", e)
                 raise RuntimeError(e)
 
 
@@ -862,8 +846,8 @@ image
         self.source_results.to_csv(self.hostdir+self.out_prefix+'source_results.csv')
         self.source_results_extra.to_csv(self.hostdir+self.out_prefix+'source_results_extra.csv')
 
-        savetxt(self.hostdir+self.out_prefix+"source_results.txt", array(results))
-        savetxt(self.hostdir+self.out_prefix+"source_results_extra.txt", array(results_extra))
+        np.savetxt(self.hostdir+self.out_prefix+"source_results.txt", np.array(results))
+        np.savetxt(self.hostdir+self.out_prefix+"source_results_extra.txt", np.array(results_extra))
         if self.save_plots:
             os.system("montage -geometry 300x300 " + fns + " sources.png")
 
@@ -877,28 +861,28 @@ image
 
         exposure = self.raw_exposure_ext().data
 
-        good_exposure = exposure[~isnan(exposure) & ~isinf(exposure) & (exposure != 0)]
+        good_exposure = exposure[~np.isnan(exposure) & ~np.isinf(exposure) & (exposure != 0)]
 
-        print("maximum exposure", good_exposure.max())
-        print("average exposure", average(good_exposure))
+        logger.info("maximum exposure %f", good_exposure.max())
+        logger.info("average exposure %f", np.average(good_exposure))
 
         cut = exposure < good_exposure.max() / self.exposure_fraction_cut
 
-        print("exposure cut below: ", exposure[~cut].min())
+        logger.info("exposure cut below: %f", exposure[~cut].min())
 
         hdu_list = []
 
-        print("energy range:", self.raw_erange())
+        logger.info("energy range: %s", self.raw_erange())
 
         sig_image = self.raw_significance_ext().data
         flux_image = self.raw_intensity_ext().data
         var_image = self.raw_variance_ext().data
 
-        sig_image[cut] = NaN
-        flux_image[cut] = NaN
-        var_image[cut] = NaN
+        sig_image[cut] = np.nan
+        flux_image[cut] = np.nan
+        var_image[cut] = np.nan
 
-        print("band", self.i_band)
+        logger.info("band %s", self.i_band)
 
         # if self.i_band==0:
         hdu_list.append(fits.PrimaryHDU(sig_image))
@@ -916,7 +900,7 @@ image
             h.header.extend(wcsh)
             h.header["E_MIN"] = e1
             h.header["E_MAX"] = e2
-            print("updating header:", e1, e2)
+            logger.info("updating header: %f %f", e1, e2)
 
         fn = self.hostdir+self.out_prefix+"masked_mosaic_%s.fits" % (self.tag)
 
@@ -974,19 +958,19 @@ class SimpleImageAnalysis:
 
     def inspect_raw(self):
         try:
-            print("exposure", self.raw_exposure_ext().header["EXTNAME"])
-            print("intensity", self.raw_intensity_ext().header["EXTNAME"])
-            print("significance", self.raw_significance_ext().header["EXTNAME"])
-            print("variance", self.raw_variance_ext().header["EXTNAME"])
+            logger.info("exposure %s", self.raw_exposure_ext().header["EXTNAME"])
+            logger.info("intensity %s", self.raw_intensity_ext().header["EXTNAME"])
+            logger.info("significance %s", self.raw_significance_ext().header["EXTNAME"])
+            logger.info("variance %s", self.raw_variance_ext().header["EXTNAME"])
         except:
-            print("mosaic without extname?")
+            logger.info("mosaic without extname?")
         try:
-            print("exposure", self.raw_exposure_ext().header["IMATYPE"])
-            print("intensity", self.raw_intensity_ext().header["IMATYPE"])
-            print("significance", self.raw_significance_ext().header["IMATYPE"])
-            print("variance", self.raw_variance_ext().header["IMATYPE"])
+            logger.info("exposure %s", self.raw_exposure_ext().header["IMATYPE"])
+            logger.info("intensity %s", self.raw_intensity_ext().header["IMATYPE"])
+            logger.info("significance %s", self.raw_significance_ext().header["IMATYPE"])
+            logger.info("variance %s", self.raw_variance_ext().header["IMATYPE"])
         except:
-            print("mosaic without imatype?")
+            logger.info("mosaic without imatype?")
 
     def get_shortname(self):
         return "ImageAnalysis"
@@ -1005,7 +989,7 @@ class SimpleImageAnalysis:
         self.dump_statistics()
 
     def estimate_sensitivity(self):
-        print("opening mosaic...")
+        logger.info("opening mosaic...")
         exposure = self.raw_exposure_ext().data
 
         variance = self.raw_variance_ext().data
@@ -1021,10 +1005,10 @@ class SimpleImageAnalysis:
 
         fits.PrimaryHDU(rms).writeto(self.hostdir+self.out_prefix+"rms_%i.fits" % self.i_band, overwrite=True)
 
-        total_rms = std(significance[mask])
+        total_rms = np.std(significance[mask])
 
         def avg_nonan(a):
-            return average(a[where(~isnan(a))])
+            return np.average(a[np.where(~np.isnan(a))])
 
         #e1, e2 = self.erange(self.i_band)
 
@@ -1073,8 +1057,8 @@ class SimpleSingleScWImageAnalysis(SimpleImageAnalysis):
 
     def get_total_ebands(self):
         gt = fits.open(self.get_raw_mosaic_fn())[1].data
-        print("group:", gt)
-        print("found bands:", (len(gt)) / 5)
+        logger.info("group: %s", gt)
+        logger.info("found bands: %f", (len(gt)) / 5)
         return (len(gt)) / 5
 
     def set_raw_mosaic_fn(self, fn):
